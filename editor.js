@@ -65,6 +65,21 @@
     deployBtn.addEventListener('click', deployToNetlify);
     document.body.appendChild(deployBtn);
 
+    const openLiveBtn = document.createElement('button');
+    openLiveBtn.id = 'open-live-btn';
+    openLiveBtn.innerHTML = '<span class="icon">🔗</span><span class="btn-text">Visit</span>';
+    openLiveBtn.title = 'Visit Live Portfolio';
+    
+    // Only show if there's an existing deployment
+    const savedLiveUrl = localStorage.getItem('NETLIFY_SITE_URL');
+    if (savedLiveUrl && !isEditMode) {
+      openLiveBtn.style.display = 'flex';
+      openLiveBtn.onclick = () => window.open(savedLiveUrl, '_blank');
+    } else {
+      openLiveBtn.style.display = 'none';
+    }
+    document.body.appendChild(openLiveBtn);
+
     // ── Deploy Modal ──
     const deployModal = document.createElement('div');
     deployModal.id = 'deploy-modal';
@@ -1267,6 +1282,7 @@
       }
 
       const liveUrl = data.url || data.deploy_url;
+      localStorage.setItem('NETLIFY_SITE_URL', liveUrl);
       showNotification('✅ Site Live!');
       
       // Show Success Modal
@@ -1274,6 +1290,13 @@
       const urlDisplay = document.getElementById('live-url-display');
       urlDisplay.value = liveUrl;
       successModal.classList.add('active');
+
+      // Unhide and configure the new Visit Live Site Button
+      const openLiveBtn = document.getElementById('open-live-btn');
+      if (openLiveBtn) {
+        openLiveBtn.style.display = 'flex';
+        openLiveBtn.onclick = () => window.open(liveUrl, '_blank');
+      }
 
     } catch (err) {
       console.error(err);
