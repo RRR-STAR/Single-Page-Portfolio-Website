@@ -1188,7 +1188,10 @@
       showNotification('🚀 Deploying securely to Netlify API...');
       
       let siteId = localStorage.getItem('NETLIFY_SITE_ID');
-      let endpoint = siteId ? `https://api.netlify.com/api/v1/sites/${siteId}/deploys` : 'https://api.netlify.com/api/v1/sites';
+      let netlifyEndpoint = siteId ? `https://api.netlify.com/api/v1/sites/${siteId}/deploys` : 'https://api.netlify.com/api/v1/sites';
+      
+      // Use corsproxy to bypass Netlify's known API CORS header duplication bug (*, *)
+      let endpoint = `https://corsproxy.io/?${encodeURIComponent(netlifyEndpoint)}`;
 
       let response = await fetch(endpoint, {
         method: 'POST',
@@ -1207,7 +1210,9 @@
         // Site might have been deleted on Netlify, try creating a new one
         console.warn('Site ID not found, creating new site...');
         localStorage.removeItem('NETLIFY_SITE_ID');
-        endpoint = 'https://api.netlify.com/api/v1/sites';
+        netlifyEndpoint = 'https://api.netlify.com/api/v1/sites';
+        endpoint = `https://corsproxy.io/?${encodeURIComponent(netlifyEndpoint)}`;
+        
         response = await fetch(endpoint, {
           method: 'POST',
           headers: {
