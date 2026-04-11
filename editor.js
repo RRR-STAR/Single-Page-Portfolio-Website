@@ -1,0 +1,1203 @@
+/**
+ * PortfolioEditor - Web-editable portfolio template engine
+ * Makes the portfolio fully editable by non-developers.
+ *
+ * Features:
+ *  - Edit mode toggle (floating button)
+ *  - Inline text editing (contenteditable)
+ *  - Image upload/generate overlays
+ *  - Add/remove skills, projects, contacts, social links
+ *  - localStorage persistence
+ *  - Export as self-contained HTML file
+ */
+(function () {
+  'use strict';
+
+  // ═══════════════════════════════════════
+  // STATE
+  // ═══════════════════════════════════════
+  let isEditMode = false;
+  let saveTimeout = null;
+  const STORAGE_KEY = 'portfolio_template_data';
+
+  const MIN_COUNTS = { skill: 3, contact: 1, project: 0, social: 0 };
+  const SELECTORS = {
+    skill: '.service-item',
+    project: '.project-item',
+    contact: '.contact-item',
+    social: '.social-item'
+  };
+
+  // ═══════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════
+  function init() {
+    loadSavedData();
+    createEditorUI();
+    addSectionButtons();
+    setupGlobalListeners();
+    updateProjectsVisibility();
+  }
+
+  // ═══════════════════════════════════════
+  // CREATE EDITOR UI
+  // ═══════════════════════════════════════
+  function createEditorUI() {
+    // ── Edit toggle button (always visible) ──
+    const toggle = document.createElement('button');
+    toggle.id = 'edit-toggle-btn';
+    toggle.innerHTML = '✏️';
+    toggle.title = 'Toggle Edit Mode';
+    toggle.addEventListener('click', toggleEditMode);
+    document.body.appendChild(toggle);
+
+    const exportBtn = document.createElement('button');
+    exportBtn.id = 'export-btn';
+    exportBtn.innerHTML = '📦';
+    exportBtn.title = 'Export Portfolio';
+    exportBtn.addEventListener('click', exportAsZip);
+    document.body.appendChild(exportBtn);
+
+    // ── Editor toolbar (visible in edit mode) ──
+    const toolbar = document.createElement('div');
+    toolbar.id = 'editor-toolbar';
+    toolbar.innerHTML = `
+      <div class="toolbar-left">
+        <span class="toolbar-title">✏️ Edit Mode</span>
+      </div>
+      <div class="toolbar-right">
+        <button id="btn-reset" title="Reset to default template">🔄 Reset</button>
+        <button id="btn-save" title="Save changes to browser">💾 Save</button>
+      </div>
+    `;
+    document.body.appendChild(toolbar);
+
+    toolbar.querySelector('#btn-reset').addEventListener('click', resetToDefault);
+    toolbar.querySelector('#btn-save').addEventListener('click', () => saveToLocalStorage(true));
+
+    // ── Modal for prompts ──
+    const modal = document.createElement('div');
+    modal.id = 'editor-modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3 id="modal-title">Enter Description</h3>
+        <textarea id="modal-input" placeholder="Describe the image you want to generate..."></textarea>
+        <div class="modal-actions">
+          <button id="modal-cancel">Cancel</button>
+          <button id="modal-confirm">✨ Generate</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // ── Single notification element ──
+    const notif = document.createElement('div');
+    notif.id = 'editor-notification';
+    document.body.appendChild(notif);
+  }
+
+  // ═══════════════════════════════════════
+  // SECTION ADD/DELETE BUTTONS
+  // ═══════════════════════════════════════
+  function addSectionButtons() {
+    // Add buttons
+    const targets = [
+      { container: '.service-bottom', label: '+ Add Skill', action: addSkill },
+      { container: '.all-projects', label: '+ Add Project', action: addProject },
+      { container: '.contact-items', label: '+ Add Contact', action: addContact },
+      { container: '.social-icon', label: '+ Add Social Link', action: addSocial }
+    ];
+
+    targets.forEach(({ container, label, action }) => {
+      const el = document.querySelector(container);
+      if (el) {
+        const btn = document.createElement('button');
+        btn.className = 'editor-add-btn';
+        btn.textContent = label;
+        btn.addEventListener('click', action);
+        el.parentElement.appendChild(btn);
+      }
+    });
+
+    // Delete buttons on existing items
+    refreshDeleteButtons();
+  }
+
+  function refreshDeleteButtons() {
+    document.querySelectorAll('.service-item').forEach(el => addDeleteButton(el, 'skill'));
+    document.querySelectorAll('.project-item').forEach(el => addDeleteButton(el, 'project'));
+    document.querySelectorAll('.contact-item').forEach(el => addDeleteButton(el, 'contact'));
+    document.querySelectorAll('.social-item').forEach(el => addDeleteButton(el, 'social'));
+  }
+
+  function addDeleteButton(element, type) {
+    if (element.querySelector('.editor-delete-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'editor-delete-btn';
+    btn.innerHTML = '×';
+    btn.title = 'Remove this item';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeItem(element, type);
+    });
+    element.style.position = 'relative';
+    element.appendChild(btn);
+  }
+
+  // ═══════════════════════════════════════
+  // EDIT MODE TOGGLE
+  // ═══════════════════════════════════════
+  function toggleEditMode() {
+    isEditMode = !isEditMode;
+    document.body.classList.toggle('edit-mode', isEditMode);
+    const toggle = document.getElementById('edit-toggle-btn');
+    toggle.innerHTML = isEditMode ? '👁️' : '✏️';
+    toggle.title = isEditMode ? 'Exit Edit Mode' : 'Toggle Edit Mode';
+
+    if (isEditMode) {
+      enableEditing();
+      showNotification('✏️ Edit mode ON — Click any text or image to edit');
+    } else {
+      disableEditing();
+      saveToLocalStorage(true);
+    }
+    updateProjectsVisibility();
+  }
+
+  function enableEditing() {
+    makeTextEditable(true);
+    addImageOverlays();
+    addHeroBgOverlay();
+    addLinkEditors();
+    updateDeleteButtonStates();
+  }
+
+  function disableEditing() {
+    makeTextEditable(false);
+    removeImageOverlays();
+    removeHeroBgOverlay();
+    removeLinkEditors();
+  }
+
+  // ═══════════════════════════════════════
+  // TEXT EDITING
+  // ═══════════════════════════════════════
+  const EDITABLE_SELECTORS = [
+    '#header .brand h1',
+    '#hero h1',
+    '#hero .cta',
+    '#services .section-title',
+    '#services .service-top p',
+    '#services .service-item h2',
+    '#services .service-item p',
+    '#projects .section-title',
+    '#projects .project-info h1',
+    '#projects .project-info h2',
+    '#projects .project-info p',
+    '#about .section-title',
+    '#about .col-right h2',
+    '#about .col-right p',
+    '#about .col-right .cta',
+    '#contact .section-title',
+    '#contact .contact-info h1',
+    '#contact .contact-info h2',
+    '#footer .brand h1'
+  ];
+
+  function makeTextEditable(enable) {
+    const joined = EDITABLE_SELECTORS.join(', ');
+    document.querySelectorAll(joined).forEach(el => {
+      if (enable) {
+        el.setAttribute('contenteditable', 'true');
+        el.classList.add('editable-active');
+        el.addEventListener('input', debouncedSave);
+        el.addEventListener('keydown', preventFormatting);
+        el.addEventListener('paste', handlePaste);
+      } else {
+        el.removeAttribute('contenteditable');
+        el.classList.remove('editable-active');
+        el.removeEventListener('input', debouncedSave);
+        el.removeEventListener('keydown', preventFormatting);
+        el.removeEventListener('paste', handlePaste);
+      }
+    });
+  }
+
+  function preventFormatting(e) {
+    if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+    }
+    if (e.key === 'Enter' && !e.target.matches('p')) {
+      e.preventDefault();
+    }
+  }
+
+  function handlePaste(e) {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  }
+
+  // ═══════════════════════════════════════
+  // IMAGE EDITING
+  // ═══════════════════════════════════════
+  function addImageOverlays() {
+    document.querySelectorAll('img').forEach(img => {
+      // Skip if overlay already exists
+      if (img.parentElement.querySelector('.img-edit-overlay')) return;
+      // Skip images inside editor UI
+      if (img.closest('#editor-toolbar, #editor-modal')) return;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'img-edit-overlay';
+      overlay.innerHTML = `
+        <button class="img-upload-btn" title="Upload an image file">📁 Upload</button>
+        <button class="img-generate-btn" title="Generate image from description">✨ Generate</button>
+      `;
+
+      overlay.querySelector('.img-upload-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        uploadImage(img);
+      });
+      overlay.querySelector('.img-generate-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        generateImage(img);
+      });
+
+      // If inside an <a>, add link editor button
+      const parentLink = img.closest('a');
+      if (parentLink) {
+        const linkBtn = document.createElement('button');
+        linkBtn.className = 'img-link-btn';
+        linkBtn.textContent = '🔗 Link';
+        linkBtn.title = 'Edit this link URL';
+        linkBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const current = parentLink.getAttribute('href') || '#';
+          const newHref = prompt('Enter the link URL:', current);
+          if (newHref !== null) {
+            parentLink.setAttribute('href', newHref);
+            debouncedSave();
+          }
+        });
+        overlay.appendChild(linkBtn);
+      }
+
+      img.parentElement.style.position = 'relative';
+      img.parentElement.appendChild(overlay);
+    });
+  }
+
+  function removeImageOverlays() {
+    document.querySelectorAll('.img-edit-overlay').forEach(el => el.remove());
+  }
+
+  function uploadImage(imgElement) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        compressImage(ev.target.result, 1200, (dataUrl) => {
+          imgElement.src = dataUrl;
+          debouncedSave();
+          showNotification('🖼️ Image uploaded!');
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+    input.click();
+  }
+
+  function generateImage(imgElement) {
+    // Try to auto-detect a description from nearby text
+    const parent = imgElement.closest('.service-item, .project-item, .contact-item, .social-item, .about-img, .col-left');
+    let defaultText = '';
+    
+    if (parent && parent.classList.contains('social-item')) {
+      const a = parent.querySelector('a');
+      if (a) {
+        let href = a.getAttribute('href') || '';
+        if (href && href !== '#') {
+          try {
+            if (!href.startsWith('http')) href = 'https://' + href;
+            const url = new URL(href);
+            defaultText = url.hostname.replace('www.', '').split('.')[0];
+          } catch(e) {
+            defaultText = href;
+          }
+        }
+      }
+    } else if (parent) {
+      const h2 = parent.querySelector('h2');
+      const h1 = parent.querySelector('h1');
+      defaultText = (h2 || h1)?.textContent?.trim() || '';
+    }
+    
+    // For about section image
+    if (!defaultText && imgElement.closest('#about')) {
+      defaultText = document.querySelector('#about .col-right h2')?.textContent?.trim() || '';
+    }
+
+    showModal('Describe the image to generate', defaultText, (description) => {
+      if (!description) return;
+      const isIcon = imgElement.closest('.icon, .social-item');
+      const dataUrl = isIcon
+        ? ImageGenerator.generateIcon(description, 200)
+        : ImageGenerator.generateFromText(description, 800, 600);
+      imgElement.src = dataUrl;
+      debouncedSave();
+      showNotification('✨ Image generated!');
+    });
+  }
+
+  function compressImage(dataUrl, maxWidth, callback) {
+    const img = new Image();
+    img.onload = () => {
+      if (img.width <= maxWidth) {
+        callback(dataUrl);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      const ratio = maxWidth / img.width;
+      canvas.width = maxWidth;
+      canvas.height = img.height * ratio;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      callback(canvas.toDataURL('image/jpeg', 0.95)); // Higher quality compression
+    };
+    img.onerror = () => callback(dataUrl);
+    img.src = dataUrl;
+  }
+
+  // ═══════════════════════════════════════
+  // HERO BACKGROUND EDITING
+  // ═══════════════════════════════════════
+  function addHeroBgOverlay() {
+    const hero = document.getElementById('hero');
+    if (!hero || hero.querySelector('.hero-bg-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'hero-bg-overlay';
+    overlay.innerHTML = `
+      <span class="hero-bg-label">🖼️ Background</span>
+      <button class="hero-bg-upload" title="Upload background image">📁 Upload</button>
+      <button class="hero-bg-generate" title="Generate background from description">✨ Generate</button>
+    `;
+
+    overlay.querySelector('.hero-bg-upload').addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          compressImage(ev.target.result, 1920, (dataUrl) => {
+            hero.style.backgroundImage = `url(${dataUrl})`;
+            debouncedSave();
+            showNotification('🖼️ Hero background updated!');
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+      input.click();
+    });
+
+    overlay.querySelector('.hero-bg-generate').addEventListener('click', () => {
+      showModal('Describe the hero background image', '', (description) => {
+        if (!description) return;
+        const dataUrl = ImageGenerator.generateFromText(description, 1920, 1080);
+        hero.style.backgroundImage = `url(${dataUrl})`;
+        debouncedSave();
+        showNotification('✨ Hero background generated!');
+      });
+    });
+
+    hero.appendChild(overlay);
+  }
+
+  function removeHeroBgOverlay() {
+    document.querySelectorAll('.hero-bg-overlay').forEach(el => el.remove());
+  }
+
+  // ═══════════════════════════════════════
+  // LINK EDITING (CTA buttons)
+  // ═══════════════════════════════════════
+  function addLinkEditors() {
+    // Add link edit buttons to CTA links
+    document.querySelectorAll('.cta').forEach(cta => {
+      if (cta.querySelector('.link-edit-btn')) return;
+      const btn = document.createElement('button');
+      btn.className = 'link-edit-btn';
+      btn.textContent = '🔗';
+      btn.title = 'Edit link URL';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const current = cta.getAttribute('href') || '#';
+        const newHref = prompt('Enter the link URL:', current);
+        if (newHref !== null) {
+          cta.setAttribute('href', newHref);
+          debouncedSave();
+        }
+      });
+      cta.style.position = 'relative';
+      cta.appendChild(btn);
+    });
+  }
+
+  function removeLinkEditors() {
+    document.querySelectorAll('.link-edit-btn').forEach(el => el.remove());
+  }
+
+  // ═══════════════════════════════════════
+  // SECTION MANAGEMENT — ADD
+  // ═══════════════════════════════════════
+  function addSkill() {
+    const container = document.querySelector('.service-bottom');
+    if (!container) return;
+
+    const item = document.createElement('div');
+    item.className = 'service-item';
+    item.style.position = 'relative';
+    item.innerHTML = `
+      <div class="icon"><img src="https://img.icons8.com/bubbles/100/000000/services.png" /></div>
+      <h2 contenteditable="true" class="editable-active">New Skill</h2>
+      <p contenteditable="true" class="editable-active">Click to edit this skill description</p>
+    `;
+    container.appendChild(item);
+
+    addDeleteButton(item, 'skill');
+    // Add image overlay to new icon
+    const newImg = item.querySelector('img');
+    if (newImg) addSingleImageOverlay(newImg);
+    updateDeleteButtonStates();
+    debouncedSave();
+    showNotification('➕ Skill added');
+  }
+
+  function addProject() {
+    const container = document.querySelector('.all-projects');
+    if (!container) return;
+
+    const section = document.getElementById('projects');
+    if (section) section.style.display = '';
+
+    const item = document.createElement('div');
+    item.className = 'project-item';
+    item.style.position = 'relative';
+    item.innerHTML = `
+      <div class="project-info">
+        <h1 contenteditable="true" class="editable-active">New Project</h1>
+        <h2 contenteditable="true" class="editable-active">Project subtitle</h2>
+        <p contenteditable="true" class="editable-active">Click to edit the project description</p>
+      </div>
+      <div class="project-img">
+        <img src="./img/img-1.png" alt="project">
+      </div>
+    `;
+    container.appendChild(item);
+
+    addDeleteButton(item, 'project');
+    const newImg = item.querySelector('.project-img img');
+    if (newImg) addSingleImageOverlay(newImg);
+    updateDeleteButtonStates();
+    updateProjectsVisibility();
+    debouncedSave();
+    showNotification('➕ Project added');
+  }
+
+  function addContact() {
+    const container = document.querySelector('.contact-items');
+    if (!container) return;
+
+    const item = document.createElement('div');
+    item.className = 'contact-item';
+    item.style.position = 'relative';
+    item.innerHTML = `
+      <div class="icon"><img src="https://img.icons8.com/bubbles/100/000000/phone.png" /></div>
+      <div class="contact-info">
+        <h1 contenteditable="true" class="editable-active">New Contact</h1>
+        <h2 contenteditable="true" class="editable-active">Your contact detail here</h2>
+      </div>
+    `;
+    container.appendChild(item);
+
+    addDeleteButton(item, 'contact');
+    const newImg = item.querySelector('img');
+    if (newImg) addSingleImageOverlay(newImg);
+    updateDeleteButtonStates();
+    debouncedSave();
+    showNotification('➕ Contact added');
+  }
+
+  function addSocial() {
+    const container = document.querySelector('.social-icon');
+    if (!container) return;
+
+    const item = document.createElement('div');
+    item.className = 'social-item';
+    item.style.position = 'relative';
+    item.innerHTML = `<a href="#"><img src="https://img.icons8.com/bubbles/100/000000/link.png" /></a>`;
+    container.appendChild(item);
+
+    addDeleteButton(item, 'social');
+    const newImg = item.querySelector('img');
+    if (newImg) addSingleImageOverlay(newImg);
+    updateDeleteButtonStates();
+    debouncedSave();
+    showNotification('➕ Social link added');
+  }
+
+  /** Add an image overlay to a single newly-created image */
+  function addSingleImageOverlay(img) {
+    if (img.parentElement.querySelector('.img-edit-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'img-edit-overlay';
+    overlay.innerHTML = `
+      <button class="img-upload-btn" title="Upload">📁 Upload</button>
+      <button class="img-generate-btn" title="Generate">✨ Generate</button>
+    `;
+    overlay.querySelector('.img-upload-btn').addEventListener('click', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      uploadImage(img);
+    });
+    overlay.querySelector('.img-generate-btn').addEventListener('click', (e) => {
+      e.stopPropagation(); e.preventDefault();
+      generateImage(img);
+    });
+
+    const parentLink = img.closest('a');
+    if (parentLink) {
+      const linkBtn = document.createElement('button');
+      linkBtn.className = 'img-link-btn';
+      linkBtn.textContent = '🔗 Link';
+      linkBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const current = parentLink.getAttribute('href') || '#';
+        const newHref = prompt('Enter the link URL:', current);
+        if (newHref !== null) { parentLink.setAttribute('href', newHref); debouncedSave(); }
+      });
+      overlay.appendChild(linkBtn);
+    }
+
+    img.parentElement.style.position = 'relative';
+    img.parentElement.appendChild(overlay);
+  }
+
+  // ═══════════════════════════════════════
+  // SECTION MANAGEMENT — REMOVE
+  // ═══════════════════════════════════════
+  function removeItem(element, type) {
+    const currentCount = document.querySelectorAll(SELECTORS[type]).length;
+    if (currentCount <= (MIN_COUNTS[type] || 0)) {
+      showNotification(`⚠️ Cannot remove: minimum ${MIN_COUNTS[type]} ${type}(s) required`);
+      return;
+    }
+
+    // Animate out
+    element.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    element.style.opacity = '0';
+    element.style.transform = 'scale(0.9)';
+
+    setTimeout(() => {
+      element.remove();
+      updateDeleteButtonStates();
+      updateProjectsVisibility();
+      debouncedSave();
+      showNotification(`🗑️ ${type.charAt(0).toUpperCase() + type.slice(1)} removed`);
+    }, 300);
+  }
+
+  function updateDeleteButtonStates() {
+    Object.keys(MIN_COUNTS).forEach(type => {
+      const items = document.querySelectorAll(SELECTORS[type]);
+      const atMin = items.length <= MIN_COUNTS[type];
+      items.forEach(item => {
+        const btn = item.querySelector('.editor-delete-btn');
+        if (btn) {
+          btn.disabled = atMin;
+          btn.title = atMin
+            ? `Minimum ${MIN_COUNTS[type]} ${type}(s) required`
+            : 'Remove this item';
+        }
+      });
+    });
+  }
+
+  function updateProjectsVisibility() {
+    const section = document.getElementById('projects');
+    if (!section) return;
+    const count = document.querySelectorAll('.project-item').length;
+    const header = section.querySelector('.projects-header');
+    const container = section.querySelector('.projects');
+
+    if (count === 0 && !isEditMode) {
+      section.style.display = 'none';
+    } else if (count === 0 && isEditMode) {
+      section.style.display = '';
+      if (container) {
+        container.style.minHeight = 'auto';
+        container.style.padding = '40px 0';
+      }
+      if (header) header.style.display = 'none';
+    } else {
+      section.style.display = '';
+      if (container) {
+        container.style.minHeight = '';
+        container.style.padding = '';
+      }
+      if (header) header.style.display = '';
+    }
+  }
+
+  // ═══════════════════════════════════════
+  // MODAL
+  // ═══════════════════════════════════════
+  function showModal(title, defaultValue, callback) {
+    const modal = document.getElementById('editor-modal');
+    const titleEl = document.getElementById('modal-title');
+    const input = document.getElementById('modal-input');
+
+    titleEl.textContent = title;
+    input.value = defaultValue || '';
+    modal.classList.add('active');
+    setTimeout(() => input.focus(), 100);
+
+    const confirmBtn = document.getElementById('modal-confirm');
+    const cancelBtn = document.getElementById('modal-cancel');
+
+    function cleanup() {
+      modal.classList.remove('active');
+      confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+      cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+    }
+
+    document.getElementById('modal-confirm').addEventListener('click', () => {
+      const value = input.value.trim();
+      cleanup();
+      callback(value || null);
+    });
+
+    document.getElementById('modal-cancel').addEventListener('click', () => {
+      cleanup();
+      callback(null);
+    });
+  }
+
+  function showNotification(message) {
+    const notif = document.getElementById('editor-notification');
+    if (!notif) return;
+    clearTimeout(notif._hideTimeout);
+    notif.textContent = message;
+    notif.classList.add('show');
+    notif._hideTimeout = setTimeout(() => notif.classList.remove('show'), 3000);
+  }
+
+  // ═══════════════════════════════════════
+  // PERSISTENCE — COLLECT
+  // ═══════════════════════════════════════
+  function collectData() {
+    const data = {};
+
+    // Brand
+    data.brand = document.querySelector('#header .brand h1')?.innerHTML || '';
+
+    // Hero
+    const heroEl = document.getElementById('hero');
+    data.hero = {
+      bgImage: heroEl?.style.backgroundImage || '',
+      lines: [],
+      ctaText: document.querySelector('#hero .cta')?.textContent?.trim() || '',
+      ctaHref: document.querySelector('#hero .cta')?.getAttribute('href') || '#'
+    };
+    document.querySelectorAll('#hero h1').forEach(h1 => {
+      data.hero.lines.push(h1.innerHTML);
+    });
+
+    // Skills
+    data.skills = {
+      title: document.querySelector('#services .section-title')?.innerHTML || '',
+      description: document.querySelector('#services .service-top p')?.innerHTML || '',
+      items: []
+    };
+    document.querySelectorAll('.service-item').forEach(item => {
+      data.skills.items.push({
+        icon: item.querySelector('.icon img')?.getAttribute('src') || '',
+        title: item.querySelector('h2')?.innerHTML || '',
+        description: item.querySelector('p')?.innerHTML || ''
+      });
+    });
+
+    // Projects
+    data.projects = {
+      title: document.querySelector('#projects .section-title')?.innerHTML || '',
+      items: []
+    };
+    document.querySelectorAll('.project-item').forEach(item => {
+      data.projects.items.push({
+        title: item.querySelector('.project-info h1')?.innerHTML || '',
+        subtitle: item.querySelector('.project-info h2')?.innerHTML || '',
+        description: item.querySelector('.project-info p')?.innerHTML || '',
+        image: item.querySelector('.project-img img')?.getAttribute('src') || ''
+      });
+    });
+
+    // About
+    data.about = {
+      title: document.querySelector('#about .section-title')?.innerHTML || '',
+      subtitle: document.querySelector('#about .col-right h2')?.innerHTML || '',
+      description: document.querySelector('#about .col-right p')?.innerHTML || '',
+      image: document.querySelector('#about .about-img img')?.getAttribute('src') || '',
+      ctaText: document.querySelector('#about .col-right .cta')?.textContent?.trim() || '',
+      ctaHref: document.querySelector('#about .col-right .cta')?.getAttribute('href') || '#'
+    };
+
+    // Contact
+    data.contact = {
+      title: document.querySelector('#contact .section-title')?.innerHTML || '',
+      items: []
+    };
+    document.querySelectorAll('.contact-item').forEach(item => {
+      const info = {
+        icon: item.querySelector('.icon img')?.getAttribute('src') || '',
+        title: item.querySelector('.contact-info h1')?.innerHTML || '',
+        details: []
+      };
+      item.querySelectorAll('.contact-info h2').forEach(h2 => {
+        info.details.push(h2.innerHTML);
+      });
+      data.contact.items.push(info);
+    });
+
+    // Footer
+    data.footer = {
+      brand: document.querySelector('#footer .brand h1')?.innerHTML || '',
+      socials: []
+    };
+    document.querySelectorAll('.social-item').forEach(item => {
+      data.footer.socials.push({
+        icon: item.querySelector('img')?.getAttribute('src') || '',
+        link: item.querySelector('a')?.getAttribute('href') || '#'
+      });
+    });
+
+    return data;
+  }
+
+  // ═══════════════════════════════════════
+  // PERSISTENCE — SAVE / LOAD
+  // ═══════════════════════════════════════
+  function saveToLocalStorage(showMsg) {
+    if (window._isResetting) return;
+    try {
+      const data = collectData();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      if (showMsg) showNotification('💾 Changes saved!');
+    } catch (e) {
+      console.error('Failed to save:', e);
+      showNotification('⚠️ Save failed — storage may be full');
+    }
+  }
+
+  function debouncedSave() {
+    if (window._isResetting) return;
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      if (window._isResetting) return;
+      try {
+        const data = collectData();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.error('Auto-save failed:', e);
+      }
+    }, 800);
+  }
+
+  function loadSavedData() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const data = JSON.parse(saved);
+      applyData(data);
+    } catch (e) {
+      console.error('Failed to load saved data:', e);
+    }
+  }
+
+  function applyData(data) {
+    if (!data) return;
+
+    // Brand
+    if (data.brand) {
+      const el = document.querySelector('#header .brand h1');
+      if (el) el.innerHTML = data.brand;
+    }
+
+    // Hero
+    if (data.hero) {
+      const heroEl = document.getElementById('hero');
+      if (heroEl && data.hero.bgImage) {
+        heroEl.style.backgroundImage = data.hero.bgImage;
+      }
+      const heroLines = document.querySelectorAll('#hero h1');
+      (data.hero.lines || []).forEach((html, i) => {
+        if (heroLines[i]) heroLines[i].innerHTML = html;
+      });
+      const heroCta = document.querySelector('#hero .cta');
+      if (heroCta) {
+        if (data.hero.ctaText) heroCta.textContent = data.hero.ctaText;
+        if (data.hero.ctaHref) heroCta.setAttribute('href', data.hero.ctaHref);
+      }
+    }
+
+    // Skills
+    if (data.skills) {
+      const titleEl = document.querySelector('#services .section-title');
+      if (titleEl && data.skills.title) titleEl.innerHTML = data.skills.title;
+      const descEl = document.querySelector('#services .service-top p');
+      if (descEl && data.skills.description) descEl.innerHTML = data.skills.description;
+
+      if (data.skills.items && data.skills.items.length > 0) {
+        const container = document.querySelector('.service-bottom');
+        if (container) {
+          container.innerHTML = '';
+          data.skills.items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'service-item';
+            div.style.position = 'relative';
+            div.innerHTML = `
+              <div class="icon"><img src="${escapeAttr(item.icon)}" /></div>
+              <h2>${item.title}</h2>
+              <p>${item.description}</p>
+            `;
+            container.appendChild(div);
+          });
+        }
+      }
+    }
+
+    // Projects
+    if (data.projects) {
+      const titleEl = document.querySelector('#projects .section-title');
+      if (titleEl && data.projects.title) titleEl.innerHTML = data.projects.title;
+
+      const container = document.querySelector('.all-projects');
+      if (container) {
+        container.innerHTML = '';
+        (data.projects.items || []).forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'project-item';
+          div.style.position = 'relative';
+          div.innerHTML = `
+            <div class="project-info">
+              <h1>${item.title}</h1>
+              <h2>${item.subtitle}</h2>
+              <p>${item.description}</p>
+            </div>
+            <div class="project-img">
+              <img src="${escapeAttr(item.image)}" alt="project">
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      }
+    }
+
+    // About
+    if (data.about) {
+      const titleEl = document.querySelector('#about .section-title');
+      if (titleEl && data.about.title) titleEl.innerHTML = data.about.title;
+      const subEl = document.querySelector('#about .col-right h2');
+      if (subEl && data.about.subtitle) subEl.innerHTML = data.about.subtitle;
+      const pEl = document.querySelector('#about .col-right p');
+      if (pEl && data.about.description) pEl.innerHTML = data.about.description;
+      const imgEl = document.querySelector('#about .about-img img');
+      if (imgEl && data.about.image) imgEl.src = data.about.image;
+      const ctaEl = document.querySelector('#about .col-right .cta');
+      if (ctaEl) {
+        if (data.about.ctaText) ctaEl.textContent = data.about.ctaText;
+        if (data.about.ctaHref) ctaEl.setAttribute('href', data.about.ctaHref);
+      }
+    }
+
+    // Contact
+    if (data.contact) {
+      const titleEl = document.querySelector('#contact .section-title');
+      if (titleEl && data.contact.title) titleEl.innerHTML = data.contact.title;
+
+      if (data.contact.items && data.contact.items.length > 0) {
+        const container = document.querySelector('.contact-items');
+        if (container) {
+          container.innerHTML = '';
+          data.contact.items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'contact-item';
+            div.style.position = 'relative';
+            const detailsHtml = (item.details || []).map(d => `<h2>${d}</h2>`).join('');
+            div.innerHTML = `
+              <div class="icon"><img src="${escapeAttr(item.icon)}" /></div>
+              <div class="contact-info">
+                <h1>${item.title}</h1>
+                ${detailsHtml}
+              </div>
+            `;
+            container.appendChild(div);
+          });
+        }
+      }
+    }
+
+    // Footer
+    if (data.footer) {
+      const brandEl = document.querySelector('#footer .brand h1');
+      if (brandEl && data.footer.brand) brandEl.innerHTML = data.footer.brand;
+
+      if (data.footer.socials && data.footer.socials.length > 0) {
+        const container = document.querySelector('.social-icon');
+        if (container) {
+          container.innerHTML = '';
+          data.footer.socials.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'social-item';
+            div.style.position = 'relative';
+            div.innerHTML = `<a href="${escapeAttr(item.link)}"><img src="${escapeAttr(item.icon)}" /></a>`;
+            container.appendChild(div);
+          });
+        }
+      }
+    }
+
+    // Rebuild delete buttons since DOM was reconstructed
+    refreshDeleteButtons();
+  }
+
+  function resetToDefault() {
+    if (!confirm('⚠️ Reset all changes to the default template?\n\nThis cannot be undone.')) return;
+    
+    // Hard clamp to prevent race conditions during page reload
+    window._isResetting = true;
+    isEditMode = false;
+    clearTimeout(saveTimeout);
+    
+    // Explicitly delete key and verify
+    localStorage.removeItem(STORAGE_KEY);
+    
+    setTimeout(() => {
+      location.reload();
+    }, 50);
+  }
+
+  function escapeAttr(str) {
+    if (!str) return '';
+    return str.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ═══════════════════════════════════════
+  // EXPORT
+  // ═══════════════════════════════════════
+  async function exportAsZip() {
+    if (typeof JSZip === 'undefined') {
+      alert('JSZip library not loaded. Ensure you are connected to the internet to export the zip file.');
+      return;
+    }
+
+    try {
+      showNotification('📦 Preparing Zip export…');
+      const zip = new JSZip();
+
+      // 1. Fetch style.css and app.js
+      try {
+        const cssResp = await fetch('./style.css');
+        if (cssResp.ok) zip.file('style.css', await cssResp.blob());
+        
+        const jsResp = await fetch('./app.js');
+        if (jsResp.ok) zip.file('app.js', await jsResp.blob());
+      } catch (e) {
+        console.warn('Failed to fetch base css/js', e);
+      }
+
+      const imgFolder = zip.folder('img');
+      let imageCounter = 1;
+
+      // 2. Clone document for manipulation
+      const clone = document.documentElement.cloneNode(true);
+      
+      // 3. Process Images
+      const fetchedImgs = {};
+      const liveImgs = clone.querySelectorAll('img');
+      for (const img of liveImgs) {
+        const src = img.getAttribute('src');
+        if (!src) continue;
+        
+        if (src.startsWith('data:image')) {
+          // This is an uploaded/generated image. Save it to img folder via base64
+          try {
+            const arr = src.split(',');
+            const match = arr[0].match(/:(.*?);/);
+            const mime = match ? match[1] : 'image/png';
+            const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
+            const filename = `custom_img_${imageCounter++}.${cleanExt}`;
+            
+            imgFolder.file(filename, arr[1], {base64: true});
+            img.setAttribute('src', `./img/${filename}`);
+          } catch(e) {
+             console.error('Failed to parse data URL', e);
+          }
+        } else if (!src.startsWith('http')) {
+          // Standard/default template image
+          try {
+            if (!fetchedImgs[src]) {
+              const resp = await fetch(src);
+              if (resp.ok) {
+                fetchedImgs[src] = await resp.blob();
+              }
+            }
+            if (fetchedImgs[src]) {
+              let filename = src.split('/').pop() || `default_img_${imageCounter++}.png`;
+              // Ensure we don't overwrite if filenames collide
+              filename = `${imageCounter++}_${filename}`;
+              imgFolder.file(filename, fetchedImgs[src]);
+              img.setAttribute('src', `./img/${filename}`);
+            }
+          } catch(e) {
+            console.warn('Could not fetch default image', src, e);
+          }
+        }
+      }
+
+      // Process Hero Background inline style if it's base64
+      const cloneHero = clone.querySelector('#hero');
+      if (cloneHero && cloneHero.style.backgroundImage && cloneHero.style.backgroundImage.includes('data:image')) {
+        try {
+          const bgStr = cloneHero.style.backgroundImage;
+          const match = bgStr.match(/url\(['"]?(data:image[^'"]+)['"]?\)/);
+          if (match && match[1]) {
+            const src = match[1];
+            const arr = src.split(',');
+            const mimeMatch = arr[0].match(/:(.*?);/);
+            const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+            
+            const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
+            const filename = `custom_hero_bg.${cleanExt}`;
+            
+            imgFolder.file(filename, arr[1], {base64: true});
+            cloneHero.style.backgroundImage = `url(./img/${filename})`;
+          }
+        } catch(e) {
+          console.error('Failed to parse hero bg', e);
+        }
+      } else {
+        // Fetch original hero-bg just in case it's the default
+        try {
+          const resp = await fetch('./img/hero-bg.png');
+          if (resp.ok) {
+            imgFolder.file('hero-bg.png', await resp.blob());
+          }
+        } catch(e) {}
+      }
+
+      // 4. Remove editor UI and Clean up edit-mode artifacts
+      const editorEls = clone.querySelectorAll(
+        '#export-btn, #edit-toggle-btn, #editor-toolbar, #editor-modal, #editor-notification, ' +
+        '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, ' +
+        '.link-edit-btn'
+      );
+      editorEls.forEach(el => el.remove());
+
+      const cloneBody = clone.querySelector('body');
+      if (cloneBody) cloneBody.classList.remove('edit-mode');
+      clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+      clone.querySelectorAll('.editable-active').forEach(el => el.classList.remove('editable-active'));
+      
+      // Remove JSZip and Editor scripts
+      clone.querySelectorAll('script').forEach(s => {
+        const src = s.getAttribute('src') || '';
+        if (src.includes('editor') || src.includes('generator') || src.includes('jszip')) {
+          s.remove();
+        }
+      });
+
+      // 5. Build final HTML string
+      const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+      zip.file('index.html', html);
+
+      // 6. Generate Zip and Download
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'my-portfolio.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showNotification('📦 Portfolio ZIP exported! Check your downloads.');
+    } catch (err) {
+      console.error(err);
+      alert('Export failed: ' + err.message);
+    }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // ═══════════════════════════════════════
+  // GLOBAL EVENT LISTENERS
+  // ═══════════════════════════════════════
+  function setupGlobalListeners() {
+    // Prevent link navigation in edit mode
+    document.addEventListener('click', (e) => {
+      if (!isEditMode) return;
+      const link = e.target.closest('a');
+      if (!link) return;
+      // Allow editor UI clicks
+      if (link.closest('#editor-toolbar, #editor-modal, .img-edit-overlay, .hero-bg-overlay')) return;
+      e.preventDefault();
+    }, true);
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd + S to save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (isEditMode) saveToLocalStorage(true);
+      }
+      // Escape to exit edit mode
+      if (e.key === 'Escape' && isEditMode) {
+        // If modal is open, close it instead
+        const modal = document.getElementById('editor-modal');
+        if (modal?.classList.contains('active')) {
+          document.getElementById('modal-cancel')?.click();
+        } else {
+          toggleEditMode();
+        }
+      }
+    });
+  }
+
+  // ═══════════════════════════════════════
+  // START
+  // ═══════════════════════════════════════
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
