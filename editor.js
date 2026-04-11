@@ -95,6 +95,37 @@
       }
     });
 
+    // ── Deploy Success Modal ──
+    const successModal = document.createElement('div');
+    successModal.id = 'deploy-success-modal';
+    successModal.innerHTML = `
+      <div class="modal-content">
+        <h3>🎉 Site is Live!</h3>
+        <p>Your portfolio has been published successfully.</p>
+        <div class="live-url-box">
+          <input type="text" id="live-url-display" readonly>
+          <button id="live-url-copy">Copy</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(successModal);
+
+    successModal.querySelector('#live-url-copy').addEventListener('click', () => {
+      const urlInput = document.getElementById('live-url-display');
+      navigator.clipboard.writeText(urlInput.value).then(() => {
+        const btn = successModal.querySelector('#live-url-copy');
+        btn.textContent = 'Copied!';
+        btn.style.background = '#28a745';
+        setTimeout(() => {
+          successModal.classList.remove('active');
+          setTimeout(() => {
+            btn.textContent = 'Copy';
+            btn.style.background = '#00C7B7';
+          }, 300); // reset after fade out
+        }, 1200);
+      });
+    });
+
     // ── Editor toolbar (visible in edit mode) ──
     const toolbar = document.createElement('div');
     toolbar.id = 'editor-toolbar';
@@ -1236,12 +1267,13 @@
       }
 
       const liveUrl = data.url || data.deploy_url;
-      showNotification('✅ Site Live! Opening link...');
+      showNotification('✅ Site Live!');
       
-      // Open immediately
-      setTimeout(() => {
-        window.open(liveUrl, '_blank');
-      }, 1500);
+      // Show Success Modal
+      const successModal = document.getElementById('deploy-success-modal');
+      const urlDisplay = document.getElementById('live-url-display');
+      urlDisplay.value = liveUrl;
+      successModal.classList.add('active');
 
     } catch (err) {
       console.error(err);

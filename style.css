@@ -807,8 +807,8 @@ body.edit-mode #deploy-btn {
 	display: none;
 }
 
-/* ── Deploy Modal ── */
-#deploy-modal {
+/* ── Deploy Modals ── */
+#deploy-modal, #deploy-success-modal {
 	display: none;
 	position: fixed;
 	top: 0; left: 0; width: 100%; height: 100%;
@@ -817,11 +817,12 @@ body.edit-mode #deploy-btn {
 	align-items: center;
 	justify-content: center;
 	backdrop-filter: blur(5px);
+	transition: opacity 0.3s ease;
 }
-#deploy-modal.active {
+#deploy-modal.active, #deploy-success-modal.active {
 	display: flex;
 }
-#deploy-modal .modal-content {
+#deploy-modal .modal-content, #deploy-success-modal .modal-content {
 	background: #111b24;
 	padding: 30px;
 	border-radius: 8px;
@@ -831,12 +832,12 @@ body.edit-mode #deploy-btn {
 	box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 	border: 1px solid rgba(0, 199, 183, 0.3);
 }
-#deploy-modal h3 {
+#deploy-modal h3, #deploy-success-modal h3 {
 	margin-top: 0;
 	color: #fff;
 	margin-bottom: 5px;
 }
-#deploy-modal p {
+#deploy-modal p, #deploy-success-modal p {
 	font-size: 0.9rem;
 	color: #bbb;
 	margin-bottom: 20px;
@@ -845,7 +846,7 @@ body.edit-mode #deploy-btn {
 	color: #00C7B7;
 	text-decoration: underline;
 }
-#deploy-modal input {
+#deploy-modal input, .live-url-box input {
 	width: 100%;
 	padding: 12px;
 	margin-bottom: 20px;
@@ -855,23 +856,34 @@ body.edit-mode #deploy-btn {
 	color: #fff;
 	font-size: 14px;
 }
+.live-url-box {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+.live-url-box input {
+	margin-bottom: 0;
+	flex: 1;
+	color: #00C7B7;
+}
 #deploy-modal .modal-actions {
 	display: flex;
 	gap: 10px;
 	justify-content: center;
 }
-#deploy-modal button {
+#deploy-modal button, .live-url-box button {
 	padding: 10px 20px;
 	border: none;
 	border-radius: 4px;
 	cursor: pointer;
 	font-weight: 500;
+	transition: background 0.3s;
 }
-#deploy-modal #deploy-save {
+#deploy-save, .live-url-box #live-url-copy {
 	background: #00C7B7;
 	color: #fff;
 }
-#deploy-modal #deploy-cancel {
+#deploy-cancel {
 	background: #333;
 	color: #fff;
 }
