@@ -46,17 +46,54 @@
     // ── Edit toggle button (always visible) ──
     const toggle = document.createElement('button');
     toggle.id = 'edit-toggle-btn';
-    toggle.innerHTML = '✏️';
+    toggle.innerHTML = '<span class="icon">✏️</span><span class="btn-text">Edit</span>';
     toggle.title = 'Toggle Edit Mode';
     toggle.addEventListener('click', toggleEditMode);
     document.body.appendChild(toggle);
 
     const exportBtn = document.createElement('button');
     exportBtn.id = 'export-btn';
-    exportBtn.innerHTML = '📦';
+    exportBtn.innerHTML = '<span class="icon">📦</span><span class="btn-text">Export</span>';
     exportBtn.title = 'Export Portfolio';
     exportBtn.addEventListener('click', exportAsZip);
     document.body.appendChild(exportBtn);
+
+    const deployBtn = document.createElement('button');
+    deployBtn.id = 'deploy-btn';
+    deployBtn.innerHTML = '<span class="icon">🚀</span><span class="btn-text">Deploy</span>';
+    deployBtn.title = '1-Click Deploy to Web';
+    deployBtn.addEventListener('click', deployToNetlify);
+    document.body.appendChild(deployBtn);
+
+    // ── Deploy Modal ──
+    const deployModal = document.createElement('div');
+    deployModal.id = 'deploy-modal';
+    deployModal.innerHTML = `
+      <div class="modal-content">
+        <h3>Deploy to Netlify</h3>
+        <p>Enter your <a href="https://app.netlify.com/user/applications#personal-access-tokens" target="_blank">Personal Access Token</a> to securely publish your site.</p>
+        <input type="password" id="deploy-token-input" placeholder="Netlify Token (e.g. nfp_...)" autocomplete="off">
+        <div class="modal-actions">
+          <button id="deploy-cancel">Cancel</button>
+          <button id="deploy-save">Launch Site</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(deployModal);
+
+    deployModal.querySelector('#deploy-cancel').addEventListener('click', () => {
+      deployModal.classList.remove('active');
+    });
+    deployModal.querySelector('#deploy-save').addEventListener('click', () => {
+      const token = document.getElementById('deploy-token-input').value.trim();
+      if (token) {
+        localStorage.setItem('NETLIFY_TOKEN', token);
+        deployModal.classList.remove('active');
+        executeDeploy(token);
+      } else {
+        alert('Please enter a valid token.');
+      }
+    });
 
     // ── Editor toolbar (visible in edit mode) ──
     const toolbar = document.createElement('div');
@@ -1005,135 +1042,120 @@
   // ═══════════════════════════════════════
   // EXPORT
   // ═══════════════════════════════════════
-  async function exportAsZip() {
+  async function generateZipBlob() {
     if (typeof JSZip === 'undefined') {
-      alert('JSZip library not loaded. Ensure you are connected to the internet to export the zip file.');
-      return;
+      throw new Error('JSZip library not loaded. Ensure you are connected to the internet.');
     }
 
+    const zip = new JSZip();
+
+    // 1. Fetch style.css and app.js
+    try {
+      const cssResp = await fetch('./style.css');
+      if (cssResp.ok) zip.file('style.css', await cssResp.blob());
+      
+      const jsResp = await fetch('./app.js');
+      if (jsResp.ok) zip.file('app.js', await jsResp.blob());
+    } catch (e) {
+      console.warn('Failed to fetch base css/js', e);
+    }
+
+    const imgFolder = zip.folder('img');
+    let imageCounter = 1;
+
+    // 2. Clone document for manipulation
+    const clone = document.documentElement.cloneNode(true);
+    
+    // 3. Process Images
+    const fetchedImgs = {};
+    const liveImgs = clone.querySelectorAll('img');
+    for (const img of liveImgs) {
+      const src = img.getAttribute('src');
+      if (!src) continue;
+      
+      if (src.startsWith('data:image')) {
+        try {
+          const arr = src.split(',');
+          const match = arr[0].match(/:(.*?);/);
+          const mime = match ? match[1] : 'image/png';
+          const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
+          const filename = `custom_img_${imageCounter++}.${cleanExt}`;
+          
+          imgFolder.file(filename, arr[1], {base64: true});
+          img.setAttribute('src', `./img/${filename}`);
+        } catch(e) { console.error('Failed to parse data URL', e); }
+      } else if (!src.startsWith('http')) {
+        try {
+          if (!fetchedImgs[src]) {
+            const resp = await fetch(src);
+            if (resp.ok) fetchedImgs[src] = await resp.blob();
+          }
+          if (fetchedImgs[src]) {
+            let filename = src.split('/').pop() || `default_img_${imageCounter++}.png`;
+            filename = `${imageCounter++}_${filename}`;
+            imgFolder.file(filename, fetchedImgs[src]);
+            img.setAttribute('src', `./img/${filename}`);
+          }
+        } catch(e) { console.warn('Could not fetch default image', src, e); }
+      }
+    }
+
+    // Process Hero Background inline style if it's base64
+    const cloneHero = clone.querySelector('#hero');
+    if (cloneHero && cloneHero.style.backgroundImage && cloneHero.style.backgroundImage.includes('data:image')) {
+      try {
+        const bgStr = cloneHero.style.backgroundImage;
+        const match = bgStr.match(/url\(['"]?(data:image[^'"]+)['"]?\)/);
+        if (match && match[1]) {
+          const arr = match[1].split(',');
+          const mimeMatch = arr[0].match(/:(.*?);/);
+          const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+          const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
+          const filename = `custom_hero_bg.${cleanExt}`;
+          imgFolder.file(filename, arr[1], {base64: true});
+          cloneHero.style.backgroundImage = `url(./img/${filename})`;
+        }
+      } catch(e) { console.error('Failed to parse hero bg', e); }
+    } else {
+      try {
+        const resp = await fetch('./img/hero-bg.png');
+        if (resp.ok) imgFolder.file('hero-bg.png', await resp.blob());
+      } catch(e) {}
+    }
+
+    // 4. Remove editor UI and Clean up artifacts
+    const editorEls = clone.querySelectorAll(
+      '#export-btn, #deploy-btn, #deploy-modal, #edit-toggle-btn, #editor-toolbar, #editor-modal, #editor-notification, ' +
+      '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, ' +
+      '.link-edit-btn'
+    );
+    editorEls.forEach(el => el.remove());
+
+    const cloneBody = clone.querySelector('body');
+    if (cloneBody) cloneBody.classList.remove('edit-mode');
+    clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+    clone.querySelectorAll('.editable-active').forEach(el => el.classList.remove('editable-active'));
+    
+    clone.querySelectorAll('script').forEach(s => {
+      const src = s.getAttribute('src') || '';
+      if (src.includes('editor') || src.includes('generator') || src.includes('jszip')) {
+        s.remove();
+      }
+    });
+
+    // 5. Build final HTML string
+    const html = '<!DOCTYPE html>\n' + clone.outerHTML;
+    zip.file('index.html', html);
+
+    return await zip.generateAsync({ type: 'blob' });
+  }
+
+  async function exportAsZip() {
     try {
       showNotification('📦 Preparing Zip export…');
-      const zip = new JSZip();
-
-      // 1. Fetch style.css and app.js
-      try {
-        const cssResp = await fetch('./style.css');
-        if (cssResp.ok) zip.file('style.css', await cssResp.blob());
-        
-        const jsResp = await fetch('./app.js');
-        if (jsResp.ok) zip.file('app.js', await jsResp.blob());
-      } catch (e) {
-        console.warn('Failed to fetch base css/js', e);
-      }
-
-      const imgFolder = zip.folder('img');
-      let imageCounter = 1;
-
-      // 2. Clone document for manipulation
-      const clone = document.documentElement.cloneNode(true);
+      const blob = await generateZipBlob();
       
-      // 3. Process Images
-      const fetchedImgs = {};
-      const liveImgs = clone.querySelectorAll('img');
-      for (const img of liveImgs) {
-        const src = img.getAttribute('src');
-        if (!src) continue;
-        
-        if (src.startsWith('data:image')) {
-          // This is an uploaded/generated image. Save it to img folder via base64
-          try {
-            const arr = src.split(',');
-            const match = arr[0].match(/:(.*?);/);
-            const mime = match ? match[1] : 'image/png';
-            const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
-            const filename = `custom_img_${imageCounter++}.${cleanExt}`;
-            
-            imgFolder.file(filename, arr[1], {base64: true});
-            img.setAttribute('src', `./img/${filename}`);
-          } catch(e) {
-             console.error('Failed to parse data URL', e);
-          }
-        } else if (!src.startsWith('http')) {
-          // Standard/default template image
-          try {
-            if (!fetchedImgs[src]) {
-              const resp = await fetch(src);
-              if (resp.ok) {
-                fetchedImgs[src] = await resp.blob();
-              }
-            }
-            if (fetchedImgs[src]) {
-              let filename = src.split('/').pop() || `default_img_${imageCounter++}.png`;
-              // Ensure we don't overwrite if filenames collide
-              filename = `${imageCounter++}_${filename}`;
-              imgFolder.file(filename, fetchedImgs[src]);
-              img.setAttribute('src', `./img/${filename}`);
-            }
-          } catch(e) {
-            console.warn('Could not fetch default image', src, e);
-          }
-        }
-      }
-
-      // Process Hero Background inline style if it's base64
-      const cloneHero = clone.querySelector('#hero');
-      if (cloneHero && cloneHero.style.backgroundImage && cloneHero.style.backgroundImage.includes('data:image')) {
-        try {
-          const bgStr = cloneHero.style.backgroundImage;
-          const match = bgStr.match(/url\(['"]?(data:image[^'"]+)['"]?\)/);
-          if (match && match[1]) {
-            const src = match[1];
-            const arr = src.split(',');
-            const mimeMatch = arr[0].match(/:(.*?);/);
-            const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-            
-            const cleanExt = mime.split('/')[1].split('+')[0] || 'png';
-            const filename = `custom_hero_bg.${cleanExt}`;
-            
-            imgFolder.file(filename, arr[1], {base64: true});
-            cloneHero.style.backgroundImage = `url(./img/${filename})`;
-          }
-        } catch(e) {
-          console.error('Failed to parse hero bg', e);
-        }
-      } else {
-        // Fetch original hero-bg just in case it's the default
-        try {
-          const resp = await fetch('./img/hero-bg.png');
-          if (resp.ok) {
-            imgFolder.file('hero-bg.png', await resp.blob());
-          }
-        } catch(e) {}
-      }
-
-      // 4. Remove editor UI and Clean up edit-mode artifacts
-      const editorEls = clone.querySelectorAll(
-        '#export-btn, #edit-toggle-btn, #editor-toolbar, #editor-modal, #editor-notification, ' +
-        '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, ' +
-        '.link-edit-btn'
-      );
-      editorEls.forEach(el => el.remove());
-
-      const cloneBody = clone.querySelector('body');
-      if (cloneBody) cloneBody.classList.remove('edit-mode');
-      clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
-      clone.querySelectorAll('.editable-active').forEach(el => el.classList.remove('editable-active'));
-      
-      // Remove JSZip and Editor scripts
-      clone.querySelectorAll('script').forEach(s => {
-        const src = s.getAttribute('src') || '';
-        if (src.includes('editor') || src.includes('generator') || src.includes('jszip')) {
-          s.remove();
-        }
-      });
-
-      // 5. Build final HTML string
-      const html = '<!DOCTYPE html>\n' + clone.outerHTML;
-      zip.file('index.html', html);
-
-      // 6. Generate Zip and Download
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = 'my-portfolio.zip';
@@ -1146,6 +1168,85 @@
     } catch (err) {
       console.error(err);
       alert('Export failed: ' + err.message);
+    }
+  }
+
+  function deployToNetlify() {
+    const token = localStorage.getItem('NETLIFY_TOKEN');
+    if (!token) {
+      document.getElementById('deploy-modal').classList.add('active');
+    } else {
+      executeDeploy(token);
+    }
+  }
+
+  async function executeDeploy(token) {
+    try {
+      showNotification('🚀 Compiling site for deployment...');
+      const blob = await generateZipBlob();
+      
+      showNotification('🚀 Deploying securely to Netlify API...');
+      
+      let siteId = localStorage.getItem('NETLIFY_SITE_ID');
+      let endpoint = siteId ? `https://api.netlify.com/api/v1/sites/${siteId}/deploys` : 'https://api.netlify.com/api/v1/sites';
+
+      let response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/zip'
+        },
+        body: blob
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Invalid or expired Netlify token. Please re-enter a valid token.');
+      }
+      
+      if (response.status === 404 && siteId) {
+        // Site might have been deleted on Netlify, try creating a new one
+        console.warn('Site ID not found, creating new site...');
+        localStorage.removeItem('NETLIFY_SITE_ID');
+        endpoint = 'https://api.netlify.com/api/v1/sites';
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/zip'
+          },
+          body: blob
+        });
+      }
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Netlify API Error (${response.status}): ${errText}`);
+      }
+
+      const data = await response.json();
+      
+      // Save ID if a new site was created
+      if (data.site_id || data.id) {
+        localStorage.setItem('NETLIFY_SITE_ID', data.site_id || data.id);
+      }
+
+      const liveUrl = data.url || data.deploy_url;
+      showNotification('✅ Site Live! Opening link...');
+      
+      // Open immediately
+      setTimeout(() => {
+        window.open(liveUrl, '_blank');
+      }, 1500);
+
+    } catch (err) {
+      console.error(err);
+      if (err.message.includes('token')) {
+        localStorage.removeItem('NETLIFY_TOKEN');
+        document.getElementById('deploy-modal').classList.add('active');
+        alert(err.message);
+      } else {
+        alert('Deploy failed: ' + err.message);
+      }
     }
   }
 
