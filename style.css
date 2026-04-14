@@ -793,7 +793,7 @@ body.edit-mode #export-btn {
 	line-height: 1;
 }
 
-#edit-toggle-btn .btn-text, #export-btn .btn-text, #deploy-btn .btn-text, #open-live-btn .btn-text {
+#edit-toggle-btn .btn-text, #export-btn .btn-text, #deploy-btn .btn-text, #open-live-btn .btn-text, #guide-toggle-btn .btn-text {
 	font-size: 16px;
 	font-weight: 600;
 	letter-spacing: 0.5px;
@@ -1465,4 +1465,226 @@ body.edit-mode .editor-add-btn {
 #resume-cta[data-pdf] {
   border: 2px solid #00C7B7;
   padding: 9px 24px;
+}
+
+/* ── Guide Button ── */
+#guide-toggle-btn {
+  position: fixed;
+  bottom: 30px;
+  left: 30px;
+  width: auto;
+  min-width: 120px;
+  height: 50px;
+  background-color: #ffffff;
+  color: #000000;
+  border: none;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  z-index: 10001;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+  padding: 0 20px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+#guide-toggle-btn:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+  background-color: #f0f0f0;
+}
+#guide-toggle-btn .icon {
+  font-size: 1.6rem;
+}
+
+/* ── Guide Modal ── */
+#guide-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100005;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#guide-modal.active {
+  display: flex;
+}
+.guide-modal-content {
+  background: #ffffff;
+  color: #333;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  border-radius: 24px;
+  position: relative;
+  overflow-y: auto;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+  animation: modalScaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 40px;
+}
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.guide-close {
+  position: absolute;
+  top: 20px;
+  right: 25px;
+  background: transparent;
+  border: none;
+  font-size: 3rem;
+  color: #999;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.guide-close:hover {
+  color: #333;
+}
+
+.guide-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.guide-header h1 {
+  font-size: 3rem;
+  margin-bottom: 10px;
+  color: #29323c;
+}
+.guide-header p {
+  font-size: 1.4rem;
+  color: #666;
+}
+
+.guide-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.guide-sections section h3 {
+  font-size: 1.8rem;
+  margin-bottom: 15px;
+  color: #e91e63;
+}
+.guide-sections section p {
+  font-size: 1.4rem;
+  line-height: 1.6;
+  color: #444;
+}
+
+.deployment-section {
+  background: #f8f9fa;
+  padding: 30px;
+  border-radius: 20px;
+  border: 1px solid #eee;
+}
+.guide-main-heading {
+  font-size: 2.2rem;
+  color: #00C7B7 !important;
+  margin-top: 10px;
+  margin-bottom: 5px;
+}
+.guide-sub-heading {
+  font-size: 1.3rem;
+  color: #777;
+  margin-bottom: 25px;
+  font-style: italic;
+}
+
+.steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.guide-step {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.step-text {
+  display: flex;
+  gap: 15px;
+  align-items: flex-start;
+}
+.step-text span {
+  background: #00C7B7;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.step-text p {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.guide-step img {
+  width: 100%;
+  max-width: 600px;
+  border-radius: 12px;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  margin: 0 auto;
+}
+
+.guide-footer {
+  margin-top: 40px;
+  text-align: center;
+}
+.guide-finish-btn {
+  background: #29323c;
+  color: white;
+  padding: 14px 40px;
+  border: none;
+  border-radius: 50px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.guide-finish-btn:hover {
+  background: #00C7B7;
+  transform: scale(1.05);
+}
+
+/* Mobile responsive for Guide */
+@media only screen and (max-width: 767px) {
+  #guide-toggle-btn {
+    left: 20px;
+    bottom: 20px;
+    height: 44px;
+    padding: 0 15px;
+    font-size: 1.2rem;
+  }
+  .guide-modal-content {
+    padding: 25px;
+    border-radius: 18px;
+  }
+  .guide-header h1 {
+    font-size: 2.2rem;
+  }
+  .guide-header p {
+    font-size: 1.2rem;
+  }
+  .guide-sections section p {
+    font-size: 1.2rem;
+  }
+  .guide-step img {
+    max-width: 100%;
+  }
 }

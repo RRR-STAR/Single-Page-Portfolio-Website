@@ -80,6 +80,97 @@
     }
     document.body.appendChild(openLiveBtn);
 
+    // ── Guide button (bottom-left) ──
+    const guideBtn = document.createElement('button');
+    guideBtn.id = 'guide-toggle-btn';
+    guideBtn.innerHTML = '<span class="icon">❓</span><span class="btn-text">Guide</span>';
+    guideBtn.title = 'User Guide';
+    guideBtn.addEventListener('click', showGuide);
+    document.body.appendChild(guideBtn);
+
+    // ── Guide Modal ──
+    const guideModal = document.createElement('div');
+    guideModal.id = 'guide-modal';
+    guideModal.innerHTML = `
+      <div class="guide-modal-content">
+        <button class="guide-close">&times;</button>
+        <div class="guide-header">
+          <h1>👋 Welcome to your Portfolio!</h1>
+          <p>Let's walk you through how to personalize and launch your new website.</p>
+        </div>
+        
+        <div class="guide-sections">
+          <section>
+            <h3>✏️ How to Edit</h3>
+            <p>Click the <strong>Edit</strong> button at the bottom-right. Once active, you can click on any text to type your own details, or hover over images to upload your own photos and icons!</p>
+          </section>
+
+          <section>
+            <h3>📦 Exporting</h3>
+            <p>The <strong>Export</strong> button downloads your entire portfolio code as a <code>.zip</code> file. This is perfect for keeping a backup or manually hosting it anywhere you like. For e.g > GitHub pages.</p>
+          </section>
+
+          <section class="deployment-section">
+            <h2 class="guide-main-heading">🚀 Deployment</h2>
+            <p class="guide-sub-heading">Make your customize website live in seconds.</p>
+            
+            <div class="steps-container">
+              <div class="guide-step">
+                <div class="step-text">
+                  <span>1</span>
+                  <p>First, open the <strong>Deploy</strong> drawer. You'll see a link to get your <strong>Personal Access Token</strong>. This token lets our site talk to Netlify securely.</p>
+                </div>
+                <img src="./img/guide/steps/step1.png" alt="Step 1" onerror="this.style.display='none'">
+              </div>
+
+              <div class="guide-step">
+                <div class="step-text">
+                  <span>2</span>
+                  <p>Sign up with any account / Log in to your Netlify account, and you'll find the <strong>"New access token"</strong> button. Click it to start creating your key.</p>
+                </div>
+                <img src="./img/guide/steps/step2.png" alt="Step 2" onerror="this.style.display='none'">
+              </div>
+
+              <div class="guide-step">
+                <div class="step-text">
+                  <span>3</span>
+                  <p>Give your token a descriptive name (like "Portfolio") and select its validity. <br><b>Note: Your site deployment tool stays active only as long as this token is valid!</b></p>
+                </div>
+                <img src="./img/guide/shapes/step3.png" alt="Step 3" onerror="this.style.display='none'">
+              </div>
+
+              <div class="guide-step">
+                <div class="step-text">
+                  <span>4</span>
+                  <p>Once generated, click the <strong>Copy</strong> icon next to your token. Keep this safe—you won't be able to see it again!</p>
+                </div>
+                <img src="./img/guide/steps/step4.png" alt="Step 4" onerror="this.style.display='none'">
+              </div>
+
+              <div class="guide-step">
+                <div class="step-text">
+                  <span>5</span>
+                  <p>Finally, go back to your portfolio, paste the token into the <strong>Netlify Token</strong> field, and hit <strong>"Launch Site"</strong>. Your portfolio is now live in 1 minute!</p>
+                </div>
+                <img src="./img/guide/steps/step5.png" alt="Step 5" onerror="this.style.display='none'">
+              </div>
+            </div>
+          </section>
+        </div>
+        
+        <div class="guide-footer">
+          <button class="guide-finish-btn">Got it, let's go!</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(guideModal);
+
+    guideModal.querySelector('.guide-close').addEventListener('click', hideGuide);
+    guideModal.querySelector('.guide-finish-btn').addEventListener('click', hideGuide);
+    guideModal.addEventListener('click', (e) => {
+      if (e.target === guideModal) hideGuide();
+    });
+
     // ── Deploy Modal ──
     const deployModal = document.createElement('div');
     deployModal.id = 'deploy-modal';
@@ -240,10 +331,16 @@
     if (isEditMode) {
       enableEditing();
       addResumeEditor();
+      if (document.getElementById('guide-toggle-btn')) {
+        document.getElementById('guide-toggle-btn').style.display = 'none';
+      }
       showNotification('✏️ Edit mode ON — Click any text or image to edit');
     } else {
       disableEditing();
       removeResumeEditor();
+      if (document.getElementById('guide-toggle-btn')) {
+        document.getElementById('guide-toggle-btn').style.display = 'flex';
+      }
       saveToLocalStorage(true);
     }
     updateProjectsVisibility();
@@ -1368,7 +1465,7 @@
       const link = e.target.closest('a');
       if (!link) return;
       // Allow editor UI clicks
-      if (link.closest('#editor-toolbar, #editor-modal, .img-edit-overlay, .hero-bg-overlay')) return;
+      if (link.closest('#editor-toolbar, #editor-modal, .img-edit-overlay, .hero-bg-overlay, #guide-modal')) return;
       e.preventDefault();
     }, true);
 
@@ -1380,16 +1477,29 @@
         if (isEditMode) saveToLocalStorage(true);
       }
       // Escape to exit edit mode
-      if (e.key === 'Escape' && isEditMode) {
+      if (e.key === 'Escape') {
         // If modal is open, close it instead
         const modal = document.getElementById('editor-modal');
+        const guide = document.getElementById('guide-modal');
         if (modal?.classList.contains('active')) {
           document.getElementById('modal-cancel')?.click();
-        } else {
+        } else if (guide?.classList.contains('active')) {
+          hideGuide();
+        } else if (isEditMode) {
           toggleEditMode();
         }
       }
     });
+  }
+
+  function showGuide() {
+    document.getElementById('guide-modal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function hideGuide() {
+    document.getElementById('guide-modal').classList.remove('active');
+    document.body.style.overflow = '';
   }
 
   // ═══════════════════════════════════════
