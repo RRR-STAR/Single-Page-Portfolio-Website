@@ -25,3 +25,19 @@ menu_item.forEach((item) => {
 		mobile_menu.classList.toggle('active');
 	});
 });
+
+// Resume Download Logic
+document.getElementById('resume-cta')?.addEventListener('click', (e) => {
+	const cta = e.currentTarget;
+	if (document.body.classList.contains('edit-mode')) return;
+	
+	if (cta.dataset.pdf) {
+		e.preventDefault();
+		const link = document.createElement('a');
+		link.href = cta.dataset.pdf;
+		link.download = 'resume.pdf';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
+});

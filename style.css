@@ -1370,4 +1370,99 @@ body.edit-mode .editor-add-btn {
 		font-size: 1.3rem;
 		padding: 12px 20px;
 	}
+
+	/* ── Fix Icon & Social Edit Overlays on Mobile ── */
+	body.edit-mode .icon, body.edit-mode .social-item {
+		overflow: visible !important;
+		position: relative;
+	}
+	body.edit-mode .icon .img-edit-overlay, 
+	body.edit-mode .social-item .img-edit-overlay {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		width: max-content;
+		height: auto;
+		background: rgba(0, 0, 0, 0.85);
+		backdrop-filter: blur(8px);
+		padding: 5px;
+		border-radius: 8px;
+		flex-direction: column; /* PERSISTENT STACK */
+		gap: 4px;
+		opacity: 1 !important;
+		display: flex;
+		box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+		border: 1px solid rgba(255,255,255,0.1);
+		z-index: 100;
+	}
+
+	/* Service Icons: Side position */
+	body.edit-mode .icon .img-edit-overlay {
+		top: 50%;
+		left: calc(100% + 10px);
+		transform: translateY(-50%);
+	}
+
+	/* Footer Social Icons: Stacked BELOW the icon */
+	body.edit-mode .social-item .img-edit-overlay {
+		top: calc(100% + 10px); /* Stack BELOW the icon */
+		bottom: auto;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+
+	.icon .img-edit-overlay, .social-item .img-edit-overlay {
+		display: none;
+	}
+
+	.icon .img-edit-overlay .img-upload-btn, 
+	.social-item .img-edit-overlay .img-upload-btn,
+	.icon .img-edit-overlay .img-generate-btn, 
+	.social-item .img-edit-overlay .img-generate-btn,
+	.social-item .img-edit-overlay .img-link-btn {
+		padding: 4px 8px;
+		font-size: 0.85rem;
+		min-width: 65px;
+		border-radius: 4px;
+	}
+
+	/* Ensure the 'Add' button in footer is visible when items are expanded */
+	body.edit-mode #footer .social-icon {
+		margin-bottom: 150px;
+	}
+}
+
+/* ── Resume Editor ── */
+.resume-editor-controls {
+  margin-top: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.editor-resume-btn {
+  background: #2e2e2e;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-family: inherit;
+  font-weight: 600;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.editor-resume-btn:hover {
+  background: #3a3a3a;
+  border-color: #00C7B7;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+#resume-cta[data-pdf] {
+  border: 2px solid #00C7B7;
+  padding: 9px 24px;
 }

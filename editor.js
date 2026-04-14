@@ -239,9 +239,11 @@
 
     if (isEditMode) {
       enableEditing();
+      addResumeEditor();
       showNotification('✏️ Edit mode ON — Click any text or image to edit');
     } else {
       disableEditing();
+      removeResumeEditor();
       saveToLocalStorage(true);
     }
     updateProjectsVisibility();
@@ -333,9 +335,11 @@
 
       const overlay = document.createElement('div');
       overlay.className = 'img-edit-overlay';
+      const parentLink = img.closest('a');
+      const isSocial = img.closest('.social-item');
+
       overlay.innerHTML = `
         <button class="img-upload-btn" title="Upload an image file">📁 Upload</button>
-        <button class="img-generate-btn" title="Generate image from description">✨ Generate</button>
       `;
 
       overlay.querySelector('.img-upload-btn').addEventListener('click', (e) => {
@@ -343,27 +347,21 @@
         e.preventDefault();
         uploadImage(img);
       });
-      overlay.querySelector('.img-generate-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        generateImage(img);
-      });
 
-      // If inside an <a>, add link editor button
-      const parentLink = img.closest('a');
       if (parentLink) {
         const linkBtn = document.createElement('button');
         linkBtn.className = 'img-link-btn';
         linkBtn.textContent = '🔗 Link';
-        linkBtn.title = 'Edit this link URL';
+        linkBtn.title = isSocial ? 'Edit social link URL' : 'Edit this link URL';
         linkBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           e.preventDefault();
           const current = parentLink.getAttribute('href') || '#';
-          const newHref = prompt('Enter the link URL:', current);
+          const newHref = prompt(isSocial ? 'Enter the social link URL:' : 'Enter the link URL:', current);
           if (newHref !== null) {
             parentLink.setAttribute('href', newHref);
             debouncedSave();
+            if (isSocial) showNotification('🔗 Social link updated');
           }
         });
         overlay.appendChild(linkBtn);
@@ -387,73 +385,50 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
-        compressImage(ev.target.result, 1200, (dataUrl) => {
+        const isIcon = imgElement.closest('.icon, .social-item');
+        const targetWidth = isIcon ? 400 : 1200; // Icons are resized smaller
+        
+        compressImage(ev.target.result, targetWidth, (dataUrl) => {
           imgElement.src = dataUrl;
           debouncedSave();
-          showNotification('🖼️ Image uploaded!');
-        });
+          showNotification(isIcon ? '🎨 Icon updated!' : '🖼️ Image uploaded!');
+        }, isIcon);
       };
       reader.readAsDataURL(file);
     });
     input.click();
   }
 
-  function generateImage(imgElement) {
-    // Try to auto-detect a description from nearby text
-    const parent = imgElement.closest('.service-item, .project-item, .contact-item, .social-item, .about-img, .col-left');
-    let defaultText = '';
-    
-    if (parent && parent.classList.contains('social-item')) {
-      const a = parent.querySelector('a');
-      if (a) {
-        let href = a.getAttribute('href') || '';
-        if (href && href !== '#') {
-          try {
-            if (!href.startsWith('http')) href = 'https://' + href;
-            const url = new URL(href);
-            defaultText = url.hostname.replace('www.', '').split('.')[0];
-          } catch(e) {
-            defaultText = href;
-          }
-        }
-      }
-    } else if (parent) {
-      const h2 = parent.querySelector('h2');
-      const h1 = parent.querySelector('h1');
-      defaultText = (h2 || h1)?.textContent?.trim() || '';
-    }
-    
-    // For about section image
-    if (!defaultText && imgElement.closest('#about')) {
-      defaultText = document.querySelector('#about .col-right h2')?.textContent?.trim() || '';
-    }
-
-    showModal('Describe the image to generate', defaultText, (description) => {
-      if (!description) return;
-      const isIcon = imgElement.closest('.icon, .social-item');
-      const dataUrl = isIcon
-        ? ImageGenerator.generateIcon(description, 200)
-        : ImageGenerator.generateFromText(description, 800, 600);
-      imgElement.src = dataUrl;
-      debouncedSave();
-      showNotification('✨ Image generated!');
-    });
-  }
-
-  function compressImage(dataUrl, maxWidth, callback) {
+  function compressImage(dataUrl, targetSize, callback, square = false) {
     const img = new Image();
     img.onload = () => {
-      if (img.width <= maxWidth) {
-        callback(dataUrl);
-        return;
-      }
       const canvas = document.createElement('canvas');
-      const ratio = maxWidth / img.width;
-      canvas.width = maxWidth;
-      canvas.height = img.height * ratio;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      callback(canvas.toDataURL('image/jpeg', 0.95)); // Higher quality compression
+      
+      let width = img.width;
+      let height = img.height;
+
+      if (square) {
+        // Crop to square for icons
+        const size = Math.min(width, height);
+        const x = (width - size) / 2;
+        const y = (height - size) / 2;
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        ctx.drawImage(img, x, y, size, size, 0, 0, targetSize, targetSize);
+      } else {
+        // Standard proportional resize
+        if (width > targetSize) {
+          const ratio = targetSize / width;
+          width = targetSize;
+          height = height * ratio;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+      }
+      
+      callback(canvas.toDataURL('image/jpeg', 0.9));
     };
     img.onerror = () => callback(dataUrl);
     img.src = dataUrl;
@@ -471,7 +446,6 @@
     overlay.innerHTML = `
       <span class="hero-bg-label">🖼️ Background</span>
       <button class="hero-bg-upload" title="Upload background image">📁 Upload</button>
-      <button class="hero-bg-generate" title="Generate background from description">✨ Generate</button>
     `;
 
     overlay.querySelector('.hero-bg-upload').addEventListener('click', () => {
@@ -494,21 +468,70 @@
       input.click();
     });
 
-    overlay.querySelector('.hero-bg-generate').addEventListener('click', () => {
-      showModal('Describe the hero background image', '', (description) => {
-        if (!description) return;
-        const dataUrl = ImageGenerator.generateFromText(description, 1920, 1080);
-        hero.style.backgroundImage = `url(${dataUrl})`;
-        debouncedSave();
-        showNotification('✨ Hero background generated!');
-      });
-    });
-
     hero.appendChild(overlay);
   }
 
   function removeHeroBgOverlay() {
     document.querySelectorAll('.hero-bg-overlay').forEach(el => el.remove());
+  }
+
+  // ═══════════════════════════════════════
+  // RESUME MANAGEMENT
+  // ═══════════════════════════════════════
+  function addResumeEditor() {
+    const cta = document.getElementById('resume-cta');
+    if (!cta || cta.parentElement.querySelector('.resume-editor-controls')) return;
+
+    const controls = document.createElement('div');
+    controls.className = 'resume-editor-controls';
+    controls.style.display = 'flex';
+    controls.style.flexDirection = 'column';
+    controls.style.gap = '8px';
+    controls.style.marginTop = '15px';
+    controls.style.alignItems = 'flex-start';
+
+    const uploadBtn = document.createElement('button');
+    uploadBtn.className = 'editor-resume-btn';
+    uploadBtn.innerHTML = '📁 Upload PDF Resume';
+    uploadBtn.onclick = () => uploadResume(cta);
+
+    controls.appendChild(uploadBtn);
+    cta.parentElement.appendChild(controls);
+  }
+
+  function removeResumeEditor() {
+    document.querySelectorAll('.resume-editor-controls').forEach(el => el.remove());
+  }
+
+  function uploadResume(cta) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (file.type !== 'application/pdf') {
+        alert('Please upload a PDF file.');
+        return;
+      }
+
+      if (file.size > 3 * 1024 * 1024) {
+        alert('File is too large. Please upload a PDF under 3MB.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        // Store in the main data object (implicitly via Save process)
+        cta.dataset.pdf = ev.target.result;
+        cta.setAttribute('href', '#'); // We'll handle this in app.js
+        debouncedSave();
+        showNotification('✅ Resume uploaded and renamed to resume.pdf');
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
   }
 
   // ═══════════════════════════════════════
@@ -648,27 +671,27 @@
     overlay.className = 'img-edit-overlay';
     overlay.innerHTML = `
       <button class="img-upload-btn" title="Upload">📁 Upload</button>
-      <button class="img-generate-btn" title="Generate">✨ Generate</button>
     `;
     overlay.querySelector('.img-upload-btn').addEventListener('click', (e) => {
       e.stopPropagation(); e.preventDefault();
       uploadImage(img);
     });
-    overlay.querySelector('.img-generate-btn').addEventListener('click', (e) => {
-      e.stopPropagation(); e.preventDefault();
-      generateImage(img);
-    });
 
     const parentLink = img.closest('a');
+    const isSocial = img.closest('.social-item');
     if (parentLink) {
       const linkBtn = document.createElement('button');
       linkBtn.className = 'img-link-btn';
       linkBtn.textContent = '🔗 Link';
+      linkBtn.title = isSocial ? 'Edit social link URL' : 'Edit link URL';
       linkBtn.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
         const current = parentLink.getAttribute('href') || '#';
-        const newHref = prompt('Enter the link URL:', current);
-        if (newHref !== null) { parentLink.setAttribute('href', newHref); debouncedSave(); }
+        const newHref = prompt(isSocial ? 'Enter social link URL:' : 'Enter link URL:', current);
+        if (newHref !== null) {
+          parentLink.setAttribute('href', newHref);
+          debouncedSave();
+        }
       });
       overlay.appendChild(linkBtn);
     }
@@ -1106,6 +1129,16 @@
       console.warn('Failed to fetch base css/js', e);
     }
 
+    // Include Resume PDF if exists
+    const resumeCta = document.getElementById('resume-cta');
+    const resumeB64 = resumeCta?.dataset.pdf;
+    if (resumeB64) {
+      try {
+        const parts = resumeB64.split(',');
+        zip.file('resume.pdf', parts[1], {base64: true});
+      } catch (e) { console.error('Failed to include resume.pdf', e); }
+    }
+
     const imgFolder = zip.folder('img');
     let imageCounter = 1;
 
@@ -1190,6 +1223,12 @@
     });
 
     // 5. Build final HTML string
+    // If resume was uploaded, ensure the CTA points to the file in the ZIP
+    if (resumeB64) {
+      const cloneResume = clone.querySelector('#resume-cta');
+      if (cloneResume) cloneResume.setAttribute('href', './resume.pdf');
+    }
+
     const html = '<!DOCTYPE html>\n' + clone.outerHTML;
     zip.file('index.html', html);
 
