@@ -166,16 +166,18 @@ function setupResumeDownload() {
 	document.getElementById('resume-cta')?.addEventListener('click', (e) => {
 		const cta = e.currentTarget;
 		if (document.body.classList.contains('edit-mode')) return;
+		e.preventDefault();
 
-		if (cta.dataset.pdf) {
-			e.preventDefault();
-			const link = document.createElement('a');
-			link.href = cta.dataset.pdf;
-			link.download = 'resume.pdf';
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-		}
+		const href = cta.getAttribute('href') || '';
+		const source = cta.dataset.pdf || (href && href !== '#' ? href : '');
+		if (!source) return;
+
+		const link = document.createElement('a');
+		link.href = source;
+		link.download = 'resume.pdf';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
 	});
 }
 

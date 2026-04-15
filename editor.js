@@ -592,12 +592,57 @@
     uploadBtn.innerHTML = '📁 Upload PDF Resume';
     uploadBtn.onclick = () => uploadResume(cta);
 
+    const showBtn = document.createElement('button');
+    showBtn.className = 'editor-resume-btn editor-show-resume-btn';
+    showBtn.innerHTML = '📄 Show Resume';
+    showBtn.onclick = () => showResume(cta);
+
+    controls.appendChild(showBtn);
     controls.appendChild(uploadBtn);
     cta.parentElement.appendChild(controls);
+    updateResumeControlVisibility(cta);
   }
 
   function removeResumeEditor() {
     document.querySelectorAll('.resume-editor-controls').forEach(el => el.remove());
+  }
+
+  function updateResumeControlVisibility(cta) {
+    const controls = cta?.parentElement?.querySelector('.resume-editor-controls');
+    if (!controls) return;
+    const showBtn = controls.querySelector('.editor-show-resume-btn');
+    if (!showBtn) return;
+
+    const hasPdf = Boolean(cta.dataset.pdf);
+    showBtn.style.display = hasPdf ? 'flex' : 'none';
+  }
+
+  function showResume(cta) {
+    const href = cta?.getAttribute('href') || '';
+    const source = cta?.dataset?.pdf || (href && href !== '#' ? href : '');
+    if (!source) return;
+
+    if (source.startsWith('data:')) {
+      try {
+        const parts = source.split(',');
+        const header = parts[0] || '';
+        const body = parts[1] || '';
+        const mime = (header.match(/data:(.*?);base64/) || [])[1] || 'application/pdf';
+        const binary = atob(body);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        return;
+      } catch (e) {
+        console.error('Failed to preview PDF data URL:', e);
+      }
+    }
+
+    window.open(source, '_blank', 'noopener,noreferrer');
   }
 
   function uploadResume(cta) {
@@ -623,6 +668,7 @@
         // Store in the main data object (implicitly via Save process)
         cta.dataset.pdf = ev.target.result;
         cta.setAttribute('href', '#'); // We'll handle this in app.js
+        updateResumeControlVisibility(cta);
         debouncedSave();
         showNotification('✅ Resume uploaded and renamed to resume.pdf');
       };
@@ -637,6 +683,7 @@
   function addLinkEditors() {
     // Add link edit buttons to CTA links
     document.querySelectorAll('.cta').forEach(cta => {
+      if (cta.id === 'resume-cta') return;
       if (cta.querySelector('.link-edit-btn')) return;
       const btn = document.createElement('button');
       btn.className = 'link-edit-btn';
@@ -970,8 +1017,10 @@
       description: document.querySelector('#about .col-right p')?.innerHTML || '',
       image: document.querySelector('#about .about-img img')?.getAttribute('src') || '',
       ctaText: document.querySelector('#about .col-right .cta')?.textContent?.trim() || '',
-      ctaHref: document.querySelector('#about .col-right .cta')?.getAttribute('href') || '#'
+      ctaHref: '#'
     };
+
+    data.resumePdf = document.querySelector('#resume-cta')?.dataset?.pdf || '';
 
     // Contact
     data.contact = {
@@ -1137,8 +1186,19 @@
       const ctaEl = document.querySelector('#about .col-right .cta');
       if (ctaEl) {
         if (data.about.ctaText) ctaEl.textContent = data.about.ctaText;
-        if (data.about.ctaHref) ctaEl.setAttribute('href', data.about.ctaHref);
+        ctaEl.setAttribute('href', '#');
       }
+    }
+
+    const resumeCta = document.getElementById('resume-cta');
+    if (resumeCta) {
+      if (data.resumePdf) {
+        resumeCta.dataset.pdf = data.resumePdf;
+      } else {
+        delete resumeCta.dataset.pdf;
+      }
+      resumeCta.setAttribute('href', '#');
+      updateResumeControlVisibility(resumeCta);
     }
 
     // Contact
@@ -1310,9 +1370,9 @@
 
     // 4. Remove editor UI and Clean up artifacts
     const editorEls = clone.querySelectorAll(
-      '#export-btn, #deploy-btn, #deploy-modal, #edit-toggle-btn, #editor-toolbar, #editor-modal, #editor-notification, ' +
-      '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, ' +
-      '.link-edit-btn'
+      '#export-btn, #deploy-btn, #deploy-modal, #deploy-success-modal, #edit-toggle-btn, #open-live-btn, ' +
+      '#guide-toggle-btn, #guide-modal, #editor-toolbar, #editor-modal, #editor-notification, ' +
+      '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, .link-edit-btn'
     );
     editorEls.forEach(el => el.remove());
 
@@ -1322,17 +1382,26 @@
     clone.querySelectorAll('.editable-active').forEach(el => el.classList.remove('editable-active'));
     
     clone.querySelectorAll('script').forEach(s => {
-      const src = s.getAttribute('src') || '';
+      const src = (s.getAttribute('src') || '').trim();
+      if (src === './app.js' || src.endsWith('/app.js')) return;
       if (src.includes('editor') || src.includes('generator') || src.includes('jszip')) {
         s.remove();
       }
     });
 
+    // Reset transient reveal runtime state so shipped pages can animate on fresh load.
+    clone.querySelectorAll('.reveal-ready').forEach((el) => {
+      delete el.dataset.revealBound;
+      el.classList.remove('revealed');
+      el.style.removeProperty('transition-delay');
+    });
+
     // 5. Build final HTML string
-    // If resume was uploaded, ensure the CTA points to the file in the ZIP
-    if (resumeB64) {
-      const cloneResume = clone.querySelector('#resume-cta');
-      if (cloneResume) cloneResume.setAttribute('href', './resume.pdf');
+    // If resume was uploaded, ensure the CTA points to the file in the ZIP.
+    const cloneResume = clone.querySelector('#resume-cta');
+    if (cloneResume) {
+      cloneResume.removeAttribute('data-pdf');
+      cloneResume.setAttribute('href', resumeB64 ? './resume.pdf' : '#');
     }
 
     const html = '<!DOCTYPE html>\n' + clone.outerHTML;
