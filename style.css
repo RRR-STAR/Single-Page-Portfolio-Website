@@ -261,6 +261,29 @@ p {
 #hero h1:nth-child(3) span {
 	animation-delay: 2.5s;
 }
+#hero .hero-cta-group {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 12px;
+	margin-top: 30px;
+}
+#hero .hero-cta-group > .cta {
+	margin-top: 0;
+}
+#hero .hero-secondary-cta-container {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	flex-wrap: nowrap;
+	gap: 10px;
+	width: 100%;
+}
+#hero .cta.hero-secondary-cta {
+	font-size: 1.6rem;
+	padding: 10px 24px;
+	margin-top: 0;
+}
 
 /* End Hero Section */
 
@@ -605,6 +628,21 @@ body.edit-mode .reveal-ready {
 	.cta {
 		font-size: 2.5rem;
 		padding: 20px 60px;
+	}
+	#hero .hero-cta-group {
+		flex-direction: row;
+		align-items: center;
+		gap: 16px;
+	}
+	#hero .hero-secondary-cta-container {
+		flex-direction: row;
+		align-items: center;
+		flex-wrap: wrap;
+		width: auto;
+	}
+	#hero .cta.hero-secondary-cta {
+		font-size: 1.25rem;
+		padding: 10px 30px;
 	}
 	h1.section-title {
 		font-size: 6rem;
@@ -1113,6 +1151,11 @@ body.edit-mode #footer .editable-active:focus {
 	font-family: inherit;
 	padding: 0;
 }
+.editor-delete-btn.left-corner {
+	top: -8px;
+	left: -8px;
+	right: auto;
+}
 body.edit-mode .editor-delete-btn {
 	display: flex;
 }
@@ -1152,6 +1195,18 @@ body.edit-mode .editor-add-btn {
 	background: rgba(220, 20, 60, 0.08);
 	border-color: crimson;
 	transform: translateY(-2px);
+}
+.editor-add-btn:disabled,
+.editor-add-btn:disabled:hover {
+	background: rgba(120, 120, 120, 0.12);
+	border-color: rgba(120, 120, 120, 0.4);
+	color: #8d8d8d;
+	cursor: not-allowed;
+	transform: none;
+	opacity: 0.7;
+}
+#hero .hero-content > .editor-add-btn {
+	margin: 16px 0 0;
 }
 
 /* ── Hero Background Overlay ── */

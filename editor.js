@@ -21,12 +21,21 @@
   let saveTimeout = null;
   const STORAGE_KEY = 'portfolio_template_data';
 
-  const MIN_COUNTS = { skill: 3, contact: 1, project: 0, social: 0 };
+  const MIN_COUNTS = { skill: 3, contact: 1, project: 0, social: 0, heroButton: 0 };
+  const MAX_COUNTS = { heroButton: 3 };
+  const TYPE_LABELS = {
+    skill: 'Skill',
+    project: 'Project',
+    contact: 'Contact',
+    social: 'Social link',
+    heroButton: 'Button'
+  };
   const SELECTORS = {
     skill: '.service-item',
     project: '.project-item',
     contact: '.contact-item',
-    social: '.social-item'
+    social: '.social-item',
+    heroButton: '#hero .hero-secondary-cta'
   };
 
   // ═══════════════════════════════════════
@@ -279,28 +288,56 @@
   // ═══════════════════════════════════════
   // SECTION ADD/DELETE BUTTONS
   // ═══════════════════════════════════════
+  function getHeroSecondaryContainer() {
+    return document.getElementById('hero-secondary-cta-container');
+  }
+
+  function updateHeroAddButtonState() {
+    const addBtn = document.getElementById('add-hero-btn');
+    if (!addBtn) return;
+
+    const count = document.querySelectorAll(SELECTORS.heroButton).length;
+    const atMax = count >= MAX_COUNTS.heroButton;
+    addBtn.disabled = atMax;
+    addBtn.title = atMax
+      ? `Maximum ${MAX_COUNTS.heroButton} buttons reached`
+      : 'Add a small button beside Portfolio';
+  }
+
   function addSectionButtons() {
     // Add buttons
     const targets = [
       { container: '.service-bottom', label: '+ Add Skill', action: addSkill },
       { container: '.all-projects', label: '+ Add Project', action: addProject },
       { container: '.contact-items', label: '+ Add Contact', action: addContact },
-      { container: '.social-icon', label: '+ Add Social Link', action: addSocial }
+      { container: '.social-icon', label: '+ Add Social Link', action: addSocial },
+      {
+        container: '#hero .hero-secondary-cta-container',
+        appendTo: '#hero .hero-content',
+        label: '+ Add Button',
+        action: addHeroButton,
+        id: 'add-hero-btn'
+      }
     ];
 
-    targets.forEach(({ container, label, action }) => {
+    targets.forEach(({ container, appendTo, label, action, id }) => {
       const el = document.querySelector(container);
       if (el) {
+        const mountPoint = appendTo ? document.querySelector(appendTo) : el.parentElement;
+        if (!mountPoint) return;
+
         const btn = document.createElement('button');
         btn.className = 'editor-add-btn';
+        if (id) btn.id = id;
         btn.textContent = label;
         btn.addEventListener('click', action);
-        el.parentElement.appendChild(btn);
+        mountPoint.appendChild(btn);
       }
     });
 
     // Delete buttons on existing items
     refreshDeleteButtons();
+    updateHeroAddButtonState();
   }
 
   function refreshDeleteButtons() {
@@ -308,16 +345,19 @@
     document.querySelectorAll('.project-item').forEach(el => addDeleteButton(el, 'project'));
     document.querySelectorAll('.contact-item').forEach(el => addDeleteButton(el, 'contact'));
     document.querySelectorAll('.social-item').forEach(el => addDeleteButton(el, 'social'));
+    document.querySelectorAll('.hero-secondary-cta').forEach(el => addDeleteButton(el, 'heroButton'));
   }
 
   function addDeleteButton(element, type) {
     if (element.querySelector('.editor-delete-btn')) return;
     const btn = document.createElement('button');
     btn.className = 'editor-delete-btn';
+    if (type === 'heroButton') btn.classList.add('left-corner');
     btn.innerHTML = '×';
-    btn.title = 'Remove this item';
+    btn.title = type === 'heroButton' ? 'Remove this button' : 'Remove this item';
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       removeItem(element, type);
     });
     element.style.position = 'relative';
@@ -358,6 +398,7 @@
     addHeroBgOverlay();
     addLinkEditors();
     updateDeleteButtonStates();
+    updateHeroAddButtonState();
   }
 
   function disableEditing() {
@@ -820,6 +861,41 @@
     showNotification('➕ Social link added');
   }
 
+  function addHeroButton() {
+    const container = getHeroSecondaryContainer();
+    if (!container) return;
+
+    const currentCount = container.querySelectorAll('.hero-secondary-cta').length;
+    if (currentCount >= MAX_COUNTS.heroButton) {
+      showNotification(`⚠️ Maximum ${MAX_COUNTS.heroButton} buttons allowed`);
+      updateHeroAddButtonState();
+      return;
+    }
+
+    const cta = document.createElement('a');
+    cta.className = 'cta hero-secondary-cta';
+    cta.setAttribute('href', '#');
+    cta.textContent = 'Button';
+    cta.style.position = 'relative';
+
+    if (isEditMode) {
+      cta.setAttribute('contenteditable', 'true');
+      cta.classList.add('editable-active');
+      cta.addEventListener('input', debouncedSave);
+      cta.addEventListener('keydown', preventFormatting);
+      cta.addEventListener('paste', handlePaste);
+    }
+
+    container.appendChild(cta);
+    addDeleteButton(cta, 'heroButton');
+    addLinkEditors();
+    updateDeleteButtonStates();
+    updateHeroAddButtonState();
+    debouncedSave();
+    notifyContentUpdated();
+    showNotification('➕ Button added');
+  }
+
   /** Add an image overlay to a single newly-created image */
   function addSingleImageOverlay(img) {
     if (img.parentElement.querySelector('.img-edit-overlay')) return;
@@ -861,9 +937,10 @@
   // SECTION MANAGEMENT — REMOVE
   // ═══════════════════════════════════════
   function removeItem(element, type) {
+    const itemLabel = TYPE_LABELS[type] || `${type.charAt(0).toUpperCase()}${type.slice(1)}`;
     const currentCount = document.querySelectorAll(SELECTORS[type]).length;
     if (currentCount <= (MIN_COUNTS[type] || 0)) {
-      showNotification(`⚠️ Cannot remove: minimum ${MIN_COUNTS[type]} ${type}(s) required`);
+      showNotification(`⚠️ Cannot remove: minimum ${MIN_COUNTS[type]} ${itemLabel.toLowerCase()}(s) required`);
       return;
     }
 
@@ -875,10 +952,11 @@
     setTimeout(() => {
       element.remove();
       updateDeleteButtonStates();
+      updateHeroAddButtonState();
       updateProjectsVisibility();
       debouncedSave();
       notifyContentUpdated();
-      showNotification(`🗑️ ${type.charAt(0).toUpperCase() + type.slice(1)} removed`);
+      showNotification(`🗑️ ${itemLabel} removed`);
     }, 300);
   }
 
@@ -890,9 +968,10 @@
         const btn = item.querySelector('.editor-delete-btn');
         if (btn) {
           btn.disabled = atMin;
+          const itemLabel = TYPE_LABELS[type] || type;
           btn.title = atMin
-            ? `Minimum ${MIN_COUNTS[type]} ${type}(s) required`
-            : 'Remove this item';
+            ? `Minimum ${MIN_COUNTS[type]} ${itemLabel.toLowerCase()}(s) required`
+            : (type === 'heroButton' ? 'Remove this button' : 'Remove this item');
         }
       });
     });
@@ -967,6 +1046,13 @@
     notif._hideTimeout = setTimeout(() => notif.classList.remove('show'), 3000);
   }
 
+  function getCleanElementText(element) {
+    if (!element) return '';
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll('.editor-delete-btn, .link-edit-btn').forEach(node => node.remove());
+    return clone.textContent.trim();
+  }
+
   // ═══════════════════════════════════════
   // PERSISTENCE — COLLECT
   // ═══════════════════════════════════════
@@ -981,11 +1067,18 @@
     data.hero = {
       bgImage: heroEl?.style.backgroundImage || '',
       lines: [],
-      ctaText: document.querySelector('#hero .cta')?.textContent?.trim() || '',
-      ctaHref: document.querySelector('#hero .cta')?.getAttribute('href') || '#'
+      ctaText: getCleanElementText(document.querySelector('#hero .hero-cta-group > .cta:not(.hero-secondary-cta)')),
+      ctaHref: document.querySelector('#hero .hero-cta-group > .cta:not(.hero-secondary-cta)')?.getAttribute('href') || '#',
+      buttons: []
     };
     document.querySelectorAll('#hero h1').forEach(h1 => {
       data.hero.lines.push(h1.innerHTML);
+    });
+    document.querySelectorAll('#hero .hero-secondary-cta').forEach(cta => {
+      data.hero.buttons.push({
+        text: getCleanElementText(cta) || 'Button',
+        href: cta.getAttribute('href') || '#'
+      });
     });
 
     // Skills
@@ -1022,7 +1115,7 @@
       subtitle: document.querySelector('#about .col-right h2')?.innerHTML || '',
       description: document.querySelector('#about .col-right p')?.innerHTML || '',
       image: document.querySelector('#about .about-img img')?.getAttribute('src') || '',
-      ctaText: document.querySelector('#about .col-right .cta')?.textContent?.trim() || '',
+      ctaText: getCleanElementText(document.querySelector('#about .col-right .cta')),
       ctaHref: '#'
     };
 
@@ -1119,10 +1212,23 @@
       (data.hero.lines || []).forEach((html, i) => {
         if (heroLines[i]) heroLines[i].innerHTML = html;
       });
-      const heroCta = document.querySelector('#hero .cta');
+      const heroCta = document.querySelector('#hero .hero-cta-group > .cta:not(.hero-secondary-cta)');
       if (heroCta) {
         if (data.hero.ctaText) heroCta.textContent = data.hero.ctaText;
         if (data.hero.ctaHref) heroCta.setAttribute('href', data.hero.ctaHref);
+      }
+
+      const heroButtonsContainer = getHeroSecondaryContainer();
+      if (heroButtonsContainer) {
+        heroButtonsContainer.innerHTML = '';
+        (data.hero.buttons || []).slice(0, MAX_COUNTS.heroButton).forEach((button) => {
+          const cta = document.createElement('a');
+          cta.className = 'cta hero-secondary-cta';
+          cta.setAttribute('href', button?.href || '#');
+          cta.textContent = button?.text || 'Button';
+          cta.style.position = 'relative';
+          heroButtonsContainer.appendChild(cta);
+        });
       }
     }
 
@@ -1256,6 +1362,7 @@
 
     // Rebuild delete buttons since DOM was reconstructed
     refreshDeleteButtons();
+    updateHeroAddButtonState();
     notifyContentUpdated();
   }
 
