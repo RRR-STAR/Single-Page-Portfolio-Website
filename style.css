@@ -1246,6 +1246,42 @@ body.edit-mode .editor-add-btn {
 #editor-modal.active {
 	display: flex;
 }
+
+#deploy-wait-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(17, 22, 30, 0.6);
+	backdrop-filter: blur(5px);
+	-webkit-backdrop-filter: blur(5px);
+	z-index: 100100;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+	pointer-events: all;
+}
+#deploy-wait-overlay.active {
+	display: flex;
+}
+.deploy-wait-text {
+	color: #fff;
+	font-size: 2rem;
+	font-weight: 600;
+	text-align: center;
+	background: rgba(0, 0, 0, 0.35);
+	border: 1px solid rgba(255, 255, 255, 0.18);
+	border-radius: 12px;
+	padding: 18px 24px;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+	letter-spacing: 0.02rem;
+}
+body.deploy-blocked {
+	cursor: wait;
+}
+
 .modal-content {
 	background: #fff;
 	border-radius: 18px;

@@ -17,6 +17,7 @@
   // STATE
   // ═══════════════════════════════════════
   let isEditMode = false;
+  let isDeploying = false;
   let saveTimeout = null;
   const STORAGE_KEY = 'portfolio_template_data';
 
@@ -268,6 +269,11 @@
     const notif = document.createElement('div');
     notif.id = 'editor-notification';
     document.body.appendChild(notif);
+
+    const deployWait = document.createElement('div');
+    deployWait.id = 'deploy-wait-overlay';
+    deployWait.innerHTML = '<div class="deploy-wait-text">Deploying the site..., please wait !</div>';
+    document.body.appendChild(deployWait);
   }
 
   // ═══════════════════════════════════════
@@ -1371,7 +1377,7 @@
     // 4. Remove editor UI and Clean up artifacts
     const editorEls = clone.querySelectorAll(
       '#export-btn, #deploy-btn, #deploy-modal, #deploy-success-modal, #edit-toggle-btn, #open-live-btn, ' +
-      '#guide-toggle-btn, #guide-modal, #editor-toolbar, #editor-modal, #editor-notification, ' +
+      '#guide-toggle-btn, #guide-modal, #editor-toolbar, #editor-modal, #editor-notification, #deploy-wait-overlay, ' +
       '.editor-add-btn, .editor-delete-btn, .img-edit-overlay, .hero-bg-overlay, .link-edit-btn'
     );
     editorEls.forEach(el => el.remove());
@@ -1440,7 +1446,14 @@
     }
   }
 
+  function setDeployLock(active) {
+    isDeploying = active;
+    document.body.classList.toggle('deploy-blocked', active);
+    document.getElementById('deploy-wait-overlay')?.classList.toggle('active', active);
+  }
+
   async function executeDeploy(token) {
+    setDeployLock(true);
     try {
       showNotification('🚀 Compiling site for deployment...');
       const blob = await generateZipBlob();
@@ -1521,6 +1534,8 @@
       } else {
         alert('Deploy failed: ' + err.message);
       }
+    } finally {
+      setDeployLock(false);
     }
   }
 
@@ -1539,6 +1554,11 @@
   function setupGlobalListeners() {
     // Prevent link navigation in edit mode
     document.addEventListener('click', (e) => {
+      if (isDeploying) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (!isEditMode) return;
       const link = e.target.closest('a');
       if (!link) return;
@@ -1549,6 +1569,11 @@
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+      if (isDeploying) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       // Ctrl/Cmd + S to save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
