@@ -120,7 +120,7 @@
                   <span>1</span>
                   <p>First, open the <strong>Deploy</strong> drawer. You'll see a link to get your <strong>Personal Access Token</strong>. This token lets our site talk to Netlify securely.</p>
                 </div>
-                <img src="./img/guide/steps/step1.png" alt="Step 1" onerror="this.style.display='none'">
+                <img src="./img/guide/step1.png" alt="Step 1" onerror="this.style.display='none'">
               </div>
 
               <div class="guide-step">
@@ -128,7 +128,7 @@
                   <span>2</span>
                   <p>Sign up with any account / Log in to your Netlify account, and you'll find the <strong>"New access token"</strong> button. Click it to start creating your key.</p>
                 </div>
-                <img src="./img/guide/steps/step2.png" alt="Step 2" onerror="this.style.display='none'">
+                <img src="./img/guide/step2.png" alt="Step 2" onerror="this.style.display='none'">
               </div>
 
               <div class="guide-step">
@@ -136,7 +136,7 @@
                   <span>3</span>
                   <p>Give your token a descriptive name (like "Portfolio") and select its validity. <br><b>Note: Your site deployment tool stays active only as long as this token is valid!</b></p>
                 </div>
-                <img src="./img/guide/shapes/step3.png" alt="Step 3" onerror="this.style.display='none'">
+                <img src="./img/guide/step3.png" alt="Step 3" onerror="this.style.display='none'">
               </div>
 
               <div class="guide-step">
@@ -144,7 +144,7 @@
                   <span>4</span>
                   <p>Once generated, click the <strong>Copy</strong> icon next to your token. Keep this safe—you won't be able to see it again!</p>
                 </div>
-                <img src="./img/guide/steps/step4.png" alt="Step 4" onerror="this.style.display='none'">
+                <img src="./img/guide/step4.png" alt="Step 4" onerror="this.style.display='none'">
               </div>
 
               <div class="guide-step">
@@ -152,7 +152,7 @@
                   <span>5</span>
                   <p>Finally, go back to your portfolio, paste the token into the <strong>Netlify Token</strong> field, and hit <strong>"Launch Site"</strong>. Your portfolio is now live in 1 minute!</p>
                 </div>
-                <img src="./img/guide/steps/step5.png" alt="Step 5" onerror="this.style.display='none'">
+                <img src="./img/guide/step5.png" alt="Step 5" onerror="this.style.display='none'">
               </div>
             </div>
           </section>
@@ -661,6 +661,10 @@
     document.querySelectorAll('.link-edit-btn').forEach(el => el.remove());
   }
 
+  function notifyContentUpdated() {
+    document.dispatchEvent(new CustomEvent('portfolio:content-updated'));
+  }
+
   // ═══════════════════════════════════════
   // SECTION MANAGEMENT — ADD
   // ═══════════════════════════════════════
@@ -684,6 +688,7 @@
     if (newImg) addSingleImageOverlay(newImg);
     updateDeleteButtonStates();
     debouncedSave();
+    notifyContentUpdated();
     showNotification('➕ Skill added');
   }
 
@@ -715,6 +720,7 @@
     updateDeleteButtonStates();
     updateProjectsVisibility();
     debouncedSave();
+    notifyContentUpdated();
     showNotification('➕ Project added');
   }
 
@@ -739,6 +745,7 @@
     if (newImg) addSingleImageOverlay(newImg);
     updateDeleteButtonStates();
     debouncedSave();
+    notifyContentUpdated();
     showNotification('➕ Contact added');
   }
 
@@ -817,6 +824,7 @@
       updateDeleteButtonStates();
       updateProjectsVisibility();
       debouncedSave();
+      notifyContentUpdated();
       showNotification(`🗑️ ${type.charAt(0).toUpperCase() + type.slice(1)} removed`);
     }, 300);
   }
@@ -1182,6 +1190,7 @@
 
     // Rebuild delete buttons since DOM was reconstructed
     refreshDeleteButtons();
+    notifyContentUpdated();
   }
 
   function resetToDefault() {
